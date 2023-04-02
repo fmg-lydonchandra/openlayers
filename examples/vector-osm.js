@@ -77,7 +77,8 @@ const vectorSource = new VectorSource({
   loader: function (extent, resolution, projection, success, failure) {
     const epsg4326Extent = transformExtent(extent, projection, 'EPSG:4326');
     const client = new XMLHttpRequest();
-    client.open('POST', 'https://overpass-api.de/api/interpreter');
+    // client.open('POST', 'https://overpass-api.de/api/interpreter');
+    client.open('GET', './belmont-small.osm');
     client.addEventListener('load', function () {
       const features = new OSMXML().readFeatures(client.responseText, {
         featureProjection: map.getView().getProjection(),
@@ -135,7 +136,7 @@ map = new Map({
   layers: [raster, vector],
   target: document.getElementById('map'),
   view: new View({
-    center: [739218, 5906096],
+    center: [12906746, -3757245],
     maxZoom: 19,
     zoom: 17,
   }),
