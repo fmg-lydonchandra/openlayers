@@ -49,6 +49,20 @@ const styles = {
       }),
     }),
   },
+  'type': {
+    'lanelet': new Style({
+      stroke: new Stroke({
+        color: 'rgba(255, 255, 255, 1.0)',
+        width: 2,
+      }),
+    }),
+    '.*': new Style({
+      stroke: new Stroke({
+        color: 'rgba(255, 255, 255, 1.0)',
+        width: 13,
+      }),
+    }),
+  },
   'landuse': {
     'forest|grass|allotments': new Style({
       stroke: new Stroke({
@@ -79,12 +93,14 @@ const vectorSource = new VectorSource({
     const epsg4326Extent = transformExtent(extent, projection, 'EPSG:4326');
     const client = new XMLHttpRequest();
     // client.open('POST', 'https://overpass-api.de/api/interpreter');
-    client.open('GET', './belmont-small.osm');
+    // client.open('GET', './belmont-small.osm');
+    client.open('GET', './mapping_example.osm');
     client.addEventListener('load', function () {
       const features = new OSMXML().readFeatures(client.responseText, {
         featureProjection: map.getView().getProjection(),
       });
       vectorSource.addFeatures(features);
+      // console.log(features);
       success(features);
     });
     client.addEventListener('error', failure);
@@ -137,7 +153,9 @@ map = new Map({
   layers: [raster, vector],
   target: document.getElementById('map'),
   view: new View({
-    center: [12906746, -3757245],
+    // center: [12906746, -3757245],
+    // center: [937752.6186406492, 6275357.11962273],
+    center: [937752.6186406492, 6275357.11962273],
     maxZoom: 19,
     zoom: 17,
   }),
@@ -158,6 +176,6 @@ const snap = new Snap({
   source: vector,
 });
 map.addInteraction(select);
-map.addInteraction(modify);
-map.addInteraction(snap);
-// map.addInteraction(draw);
+// map.addInteraction(modify);
+// map.addInteraction(snap);
+map.addInteraction(draw);
