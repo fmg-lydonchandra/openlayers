@@ -33,7 +33,8 @@ const modify = new Modify({
 });
 
 const draw = new Draw({
-  type: 'Polygon',
+  type: 'LineString',
+  // type: 'Polygon',
   source: source,
 });
 

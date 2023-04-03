@@ -7,6 +7,7 @@ import {Circle as CircleStyle, Fill, Stroke, Style} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
 import {bbox as bboxStrategy} from '../src/ol/loadingstrategy.js';
 import {transformExtent} from '../src/ol/proj.js';
+import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
 
 let map = null;
 
@@ -44,7 +45,7 @@ const styles = {
     '.*': new Style({
       stroke: new Stroke({
         color: 'rgba(255, 255, 255, 1.0)',
-        width: 3,
+        width: 13,
       }),
     }),
   },
@@ -141,3 +142,22 @@ map = new Map({
     zoom: 17,
   }),
 });
+
+const select = new Select();
+
+const modify = new Modify({
+  features: select.getFeatures(),
+});
+
+const draw = new Draw({
+  type: 'LineString',
+  // type: 'Polygon',
+  source: vector,
+});
+const snap = new Snap({
+  source: vector,
+});
+map.addInteraction(select);
+map.addInteraction(modify);
+map.addInteraction(snap);
+// map.addInteraction(draw);
