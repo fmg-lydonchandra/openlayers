@@ -33,7 +33,10 @@ class PtclJSON extends JSONFeature {
       const feature = new Feature();
       for (let j = 0; j < pathSec.numElements; j++) {
         const elem = pathSec.elements[j];
-        const centerPoint = [elem.referencePoint.x / 1000, elem.referencePoint.y / 1000];
+        const centerPoint = [
+          elem.referencePoint.x / 1000,
+          elem.referencePoint.y / 1000,
+        ];
         centreLines.push(centerPoint);
       }
       const geom = new LineString(centreLines);

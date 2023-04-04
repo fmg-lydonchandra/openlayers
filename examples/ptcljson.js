@@ -5,6 +5,7 @@ import View from '../src/ol/View.js';
 import XYZ from '../src/ol/source/XYZ.js';
 import {Fill, Stroke, Style} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
+import proj4 from 'proj4';
 
 const key = 'get_your_own_D6rA4zTHduk6KOKTXzGB';
 const attributions =
@@ -29,6 +30,8 @@ const style = new Style({
   }),
 });
 
+proj4.defs["EPSG:28350"] = "+proj=utm +zone=50 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs";
+
 // const vector = new VectorLayer({
 //   source: new VectorSource({
 //     url: 'data/topojson/world-110m.json',
@@ -46,7 +49,7 @@ const vector = new VectorLayer({
   source: new VectorSource({
     url: 'HazelmerePathSectionsOnlyPtcl.json',
     format: new PtclJSON({
-      dataProjection: 'EPSG:28350'
+      dataProjection: 'EPSG:28350',
     }),
     overlaps: false,
   }),
@@ -54,7 +57,7 @@ const vector = new VectorLayer({
 });
 
 const map = new Map({
-  layers: [vector],
+  layers: [vector, raster],
   target: 'map',
   view: new View({
     center: [0, 0],
