@@ -1,8 +1,10 @@
+/* eslint-disable */
+
 import JSONFeature from './JSONFeature.js';
 import {get as getProjection} from '../proj.js';
-import TopoJSON from './TopoJSON.js';
 import Feature from '../Feature.js';
 import {LineString} from '../geom.js';
+import Mgrs from '../../../public/mgrs.js';
 
 class PtclJSON extends JSONFeature {
   constructor(options) {
@@ -33,14 +35,24 @@ class PtclJSON extends JSONFeature {
       const feature = new Feature();
       for (let j = 0; j < pathSec.numElements; j++) {
         const elem = pathSec.elements[j];
-        const centerPoint = [
+        const centerPointMgrs = [
           elem.referencePoint.x / 1000,
           elem.referencePoint.y / 1000,
         ];
+        const mgrsInst = new Mgrs();
+        const mgrsSquare = {
+          utm_zone: 50,
+          lat_band: 'J',
+          column: 'M',
+          row: 'K',
+        }
+        const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, mgrsSquare);
         centreLines.push(centerPoint);
       }
-      const geom = new LineString(centreLines);
-      feature.setGeometry(geom);
+      let geom = new LineString(centreLines);
+      const transformed = geom.transform('EPSG:28350', 'EPSG:3857');
+      feature.setId("ptcl_" + pathSec.id);
+      feature.setGeometry(transformed);
       features.push(feature);
     }
     console.log(features)

@@ -1,3 +1,6 @@
+/* eslint-disable */
+import BinarySearchBounds from './binarySearchBounds.js';
+
 // Southern hemisphere gets a 10,000km 'false northing' offset.
 const FALSE_NORTHING = 10000000;
 
@@ -90,8 +93,7 @@ class Mgrs {
       northing -= FALSE_NORTHING;
     }
 
-    var it = LowerBound(BAND_NORTHING, northing, 0, BAND_NORTHING.length - 1);
-    //std::lower_bound(BAND_NORTHING.begin(), BAND_NORTHING.end(), northing);
+    var it = BinarySearchBounds.lowerBound(BAND_NORTHING, northing, null, 0, BAND_NORTHING.length - 1);
     var lat_band_id = (it - BAND_NORTHING[0]) - 1;
     if (lat_band_id < 0) {
       throw new Error('northing_to_band_id(): northing out of range (polar)');
@@ -110,7 +112,7 @@ class Mgrs {
 
     const column_start = ((square.utm_zone - 1) % 3) * 8;
     // Safe Cast: 'square.column' will always be at least 'A' because it is assigned from 'MGRS_LETTER'
-    const column_id = MGRS_LETTER_ID[square.column - 'A'.charCodeAt(0)];
+    const column_id = MGRS_LETTER_ID[square.column.charCodeAt(0) - 'A'.charCodeAt(0)];
 
     const easting_index = column_id - column_start;
 
@@ -135,7 +137,7 @@ class Mgrs {
 
     // Calculate the northing of the southern edge of the latitude band in which this cell resides.
     // Safe Cast: 'square.lat_band' will always be at least 'A' because it is assigned from 'MGRS_LETTER'
-    const letter_id = MGRS_LETTER_ID[square.lat_band - 'A'.charCodeAt(0)];
+    const letter_id = MGRS_LETTER_ID[square.lat_band.charCodeAt(0) - 'A'.charCodeAt(0)];
 
     // Correct for UTM zones starting from 'C', not 'A'.
     // Safe Cast: argument will always be positive because 'letter_id' is assigned with the OFFSET added.
@@ -163,7 +165,7 @@ class Mgrs {
     // Safe Cast: 'square.row' will always be at least 'A' because it is assigned from 'MGRS_LETTER'
     // 'row_id': The number of MGRS squares between the southern edge of the provide square.row and closest 'A' square to the South
     //      regardless of an even or odd latitude band at this point. This is corrected later.
-    const row_id = MGRS_LETTER_ID[square.row - 'A'.charCodeAt(0)];
+    const row_id = MGRS_LETTER_ID[square.row.charCodeAt(0) - 'A'.charCodeAt(0)];
     // The row letter wraps around every 2000km (20 letters).
     // The latitude band resolves this.
     // latitude band number [0 to 20], 0 is the southern C zone.
@@ -497,8 +499,12 @@ class Mgrs {
     const ret = {};
     const square_utm_origin = this.mgrs_square_origin(square);
     ret.square = square;
-    ret.EN[0] = EN[0] - square_utm_origin[0];
-    ret.EN[1] = EN[1] - square_utm_origin[1];
+    ret.EN = [
+      EN[0] - square_utm_origin[0],
+      EN[1] - square_utm_origin[1]
+    ];
+    // ret.EN[0] = EN[0] - square_utm_origin[0];
+    // ret.EN[1] = EN[1] - square_utm_origin[1];
     return ret;
   }
 
@@ -551,46 +557,4 @@ class Mgrs {
 //   author={Deakin, RE},
 //   year={2014}
 // }
-class KarneyKruegerConstants
-{
-  alpha = [];
-
-  A = 0;
-
-  // Note: requires c++14 for constexpr
-  constructor() {
-    const n = f / (2 - f);
-    const n2 = n * n;
-    const n3 = n2 * n;
-    const n4 = n2 * n2;
-    const n5 = n4 * n;
-    const n6 = n4 * n2;
-    const n7 = n6 * n;
-    const n8 = n4 * n4;
-
-    // rectifying radius A
-    this.A = a / (1.0 + n) * (1 + n2 / 4 + n4 / 64 + n6 / 256 + n8 * 25.0 / 16384);
-
-    // coefficients (via horner form)
-    this.alpha[0] = (n
-        (n *
-          (n *
-            (n *
-              (n * (n * ((37884525 - 75900428 * n) * n + 42422016) - 89611200) +
-                46287360) +
-              63504000) -
-            135475200) +
-          +101606400
-      / 203212800;
-    this.alpha[1] = (n2 * (n * (n * (n * (n * (n * (148003883 * n + 83274912) - 178508970) + 77690880) + 67374720) -
-        104509440) + 47174400))
-      / 174182400;
-    this.alpha[2] = (n3 * (n * (n * (n * (n * (318729724 * n - 738126169) + 294981280) + 178924680) - 234938880) +
-      81164160)) / 319334400;
-    this.alpha[3] = (n4 * (n * (n * ((14967552000 - 40176129013 * n) * n + 6971354016) - 8165836800) + 2355138720)) /
-      7664025600;
-    this.alpha[4] = (n5 * (n * (n * (10421654396 * n + 3997835751) - 4266773472) + 1072709352)) / 2490808320;
-    this.alpha[5] = (n6 * (n * (175214326799 * n - 171950693600) + 38652967262)) / 58118860800;
-    this.alpha[6] = (13700311101 - 67039739596 * n) * n7 / 12454041600;
-  }
-}
+export default Mgrs;
