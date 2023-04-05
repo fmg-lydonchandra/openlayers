@@ -38,10 +38,12 @@ class PtclJSON extends JSONFeature {
     }
 
     for (let i = 0, ii = object.AreaMapDePtr.pathSections.length; i < ii; i++) {
+    // for (let i = 0, ii = 1; i < ii; i++) {
       const pathSec = object.AreaMapDePtr.pathSections[i];
       const feature = new Feature();
       let centreLines = [];
       let ribCoords = [];
+      console.log('pathSec.numElements',pathSec.numElements)
       for (let j = 0; j < pathSec.numElements; j++) {
         const pathSecElem = pathSec.elements[j];
         const centerPointMgrs = [
@@ -53,7 +55,8 @@ class PtclJSON extends JSONFeature {
         ribCoords.push(this.getCoordinates(pathSecElem, mgrsSquare))
         centreLines.push(centerPoint);
       }
-      let boundaryGeom = this.getBoundary(ribCoords, mgrsSquare);
+      let boundaryGeom = this.getBoundary(ribCoords);
+      console.log("boundaryGeom", boundaryGeom)
       const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
       let centreLineGeom = new LineString(centreLines);
@@ -67,7 +70,8 @@ class PtclJSON extends JSONFeature {
     return features;
   }
 
-  getBoundary(ribCoords, mgrsSquare) {
+  getBoundary(ribCoords) {
+    console.log('ribCoords', ribCoords)
     const boundaryCoords = [];
     if(ribCoords < 2) {
       throw new Error('pathSectionElements < 2');
@@ -78,7 +82,7 @@ class PtclJSON extends JSONFeature {
     boundaryCoords.push(firstRib[0]);
 
     // add left boundary
-    for (let i = 1; i < ribCoords.Count - 1; i++)
+    for (let i = 1; i < ribCoords.length - 1; i++)
     {
       let rib = ribCoords[i];
       boundaryCoords.push(rib[0]);
@@ -90,13 +94,13 @@ class PtclJSON extends JSONFeature {
     boundaryCoords.push(lastRib[2]);
 
     // add right boundary
-    for (let i = ribCoords.Count - 2; i >= 0; i--)
+    for (let i = ribCoords.length - 2; i >= 0; i--)
     {
       let rib = ribCoords[i];
       boundaryCoords.push(rib[2]);
     }
-
-    return new LineString(boundaryCoords);
+    console.log("boundaryCoords", boundaryCoords)
+    return new Polygon([ boundaryCoords ]);
   }
 
   static roundAwayFromZero = v => v < 0 ? Math.ceil(v - .5) : Math.floor(+v + .5);
@@ -106,19 +110,19 @@ class PtclJSON extends JSONFeature {
     const mgrsInst = new Mgrs();
 
     // TO DO: implement using NetTopologySuite
-    const angle = (rib.referenceHeading / 100) + (Math.PI / 2);
+    const angle = (rib.referenceHeading / 10000) + (Math.PI / 2);
     // 90 degrees to direction
     const left = [
-      PtclJSON.roundAwayFromZero(rib.referencePoint.x / 1000 + rib.leftEdge.distanceFromReferencePoint / 100 * Math.cos(angle)),
-      PtclJSON.roundAwayFromZero(rib.referencePoint.y / 1000 + rib.leftEdge.distanceFromReferencePoint / 100 * Math.sin(angle))
+      rib.referencePoint.x / 1000 + (rib.leftEdge.distanceFromReferencePoint / 1000 * Math.cos(angle)),
+      rib.referencePoint.y / 1000 + (rib.leftEdge.distanceFromReferencePoint / 1000 * Math.sin(angle))
     ];
     const center = [
-      PtclJSON.roundAwayFromZero(rib.referencePoint.x / 1000),
-      PtclJSON.roundAwayFromZero(rib.referencePoint.y / 1000)
+      rib.referencePoint.x / 1000,
+      rib.referencePoint.y / 1000
     ];
-    var right = [
-      PtclJSON.roundAwayFromZero(rib.referencePoint.x / 1000 - rib.rightEdge.distanceFromReferencePoint / 100 * Math.cos(angle)),
-      PtclJSON.roundAwayFromZero(rib.referencePoint.y / 1000 - rib.rightEdge.distanceFromReferencePoint / 100 * Math.sin(angle))
+    const right = [
+      rib.referencePoint.x / 1000 - rib.rightEdge.distanceFromReferencePoint / 1000 * Math.cos(angle),
+      rib.referencePoint.y / 1000 - rib.rightEdge.distanceFromReferencePoint / 1000 * Math.sin(angle)
     ];
 
     return [
