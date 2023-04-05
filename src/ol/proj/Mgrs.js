@@ -16,12 +16,35 @@ const NUMBER_MGRS_ROW_LETTERS = 20;
 // Letters exclude I and O.
 // We often convert between an index number (e.g. 0-24) and actual letter.
 const MGRS_LETTER = [
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-  'Y', 'Z'
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'G',
+  'H',
+  'J',
+  'K',
+  'L',
+  'M',
+  'N',
+  'P',
+  'Q',
+  'R',
+  'S',
+  'T',
+  'U',
+  'V',
+  'W',
+  'X',
+  'Y',
+  'Z',
 ];
 
 const MGRS_LETTER_ID = [
-  0, 1, 2, 3, 4, 5, 6, 7, -1, 8, 9, 10, 11, 12, -1, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23
+  0, 1, 2, 3, 4, 5, 6, 7, -1, 8, 9, 10, 11, 12, -1, 13, 14, 15, 16, 17, 18, 19,
+  20, 21, 22, 23,
 ];
 
 // The latitude band letters C-X (~I,O) form numbers 0-20.
@@ -32,50 +55,58 @@ const MGRS_LETTER_ID = [
 // Does not include polar regions (they don't use UTM northing).
 const BAND_NORTHING = [
   -8883084.95594830438, // -80 deg (C)
-  -7991508.54271004162, -7100467.04938164819, -6210141.32687210384, -5320655.78919156827, -4432069.05689851660,
-  -3544369.90953862480,
-  -2657478.70944542065, -1771254.01828129962, -885503.759297154844, 0.000000000000, 885503.759297154145,
+  -7991508.54271004162,
+  -7100467.04938164819,
+  -6210141.32687210384,
+  -5320655.78919156827,
+  -4432069.0568985166,
+  -3544369.9095386248,
+  -2657478.70944542065,
+  -1771254.01828129962,
+  -885503.759297154844,
+  0.0,
+  885503.759297154145,
   1771254.018281299155,
-  2657478.709445421118, 3544369.909538624808, 4432069.056898516603, 5320655.789191568270, 6210141.326872103848,
-  7100467.049381648190,
+  2657478.709445421118,
+  3544369.909538624808,
+  4432069.056898516603,
+  5320655.78919156827,
+  6210141.326872103848,
+  7100467.04938164819,
   7991508.542710041627, // 72 deg (X)
 ];
 
 // semi-major axis (m)
+// eslint-disable-next-line no-unused-vars
 const a = 6378137;
 
 // inverse flattening
 const f = 1.0 / 298.257222101;
 
 class Mgrs {
-
-  northing_to_lat_band(northing, has_false_northing)
-  {
+  northing_to_lat_band(northing, has_false_northing) {
     // remove any false northing
-    if (has_false_northing)
-    northing -= FALSE_NORTHING;
+    if (has_false_northing) {
+      northing -= FALSE_NORTHING;
+    }
 
     var it = LowerBound(BAND_NORTHING, northing, 0, BAND_NORTHING.length - 1);
     //std::lower_bound(BAND_NORTHING.begin(), BAND_NORTHING.end(), northing);
     var lat_band_id = (it - BAND_NORTHING[0]) - 1;
     if (lat_band_id < 0) {
-      throw new Error("northing_to_band_id(): northing out of range (polar)");
+      throw new Error('northing_to_band_id(): northing out of range (polar)');
     }
     // Safe Cast: if negative, the exception above is thrown.
     return MGRS_LETTER[lat_band_id + LAT_BAND_ID_TO_MGRS_LETTER_ID_OFFSET];
   }
 
-  modulo(a, b)
-  {
+  modulo(a, b) {
     const result = a % b;
     return result >= 0 ? result : result + b;
   }
 
-  mgrs_square_origin(square)
-  {
+  mgrs_square_origin(square) {
     this.validate(square);
-
-    let easting_origin, northing_origin;
 
     const column_start = ((square.utm_zone - 1) % 3) * 8;
     // Safe Cast: 'square.column' will always be at least 'A' because it is assigned from 'MGRS_LETTER'
@@ -83,21 +114,24 @@ class Mgrs {
 
     const easting_index = column_id - column_start;
 
-    // This is done to support a provided square.column outside of the square.utm_zone. Although this is not expected to occur
+    // This is done to support a provided square.column outside the square.utm_zone. Although this is not expected to occur
     // in typical usage support is provided.
     // If square.column is not within the square.utm_zone the resulting easting will be relative to the provided UTM Zone
     // (square.utm_zone). For example extending West beyond the limits of the UTM zone will produce negative easting values while
     // extending East beyond the limits of the UTM zone will produce positive easting values.
-    const easting_offset = easting_index > (NUMBER_MGRS_COLUMN_LETTERS / 2) ? -NUMBER_MGRS_COLUMN_LETTERS : 0;
+    const easting_offset =
+      easting_index > NUMBER_MGRS_COLUMN_LETTERS / 2
+        ? -NUMBER_MGRS_COLUMN_LETTERS
+        : 0;
 
     // Note: index starts at 100km (index + 1)
-    easting_origin = (easting_index + 1 + easting_offset) * M_PER_MGRS_SQUARE;
+    const easting_origin = (easting_index + 1 + easting_offset) * M_PER_MGRS_SQUARE;
 
     // First MGRS square north of the equator is,
     //      - 'A' (0) for odd UTM zones,
     //      - 'F' (5) for even UTM zones
     // square row / northing_origin.
-    const row_start = (square.utm_zone % 2 == 0) ? 5 : 0;
+    const row_start = square.utm_zone % 2 == 0 ? 5 : 0;
 
     // Calculate the northing of the southern edge of the latitude band in which this cell resides.
     // Safe Cast: 'square.lat_band' will always be at least 'A' because it is assigned from 'MGRS_LETTER'
@@ -139,8 +173,7 @@ class Mgrs {
     // 'nearest_northing_index' is positive if square.lat_band is within Northern hemisphere and negative
     // if square.lat_band is within the Southern hemisphere. However, the use of modulo in the relationships below means the
     // North / South geometry and relationships is consistent for both the Northern and Southern hemisphere.
-    // @ts-ignore
-    const nearest_northing_index = parseInt(Math.floor(BAND_NORTHING[lat_band_id] / M_PER_MGRS_SQUARE));
+    const nearest_northing_index = Math.floor(BAND_NORTHING[lat_band_id] / M_PER_MGRS_SQUARE);
 
     // "lat_crossing_ind" is the number of squares between the "latitude band crossing" and "lat band crossing datum" to the South.
     // Northern hemisphere e.g. nearest_northing_index = 25, lat_crossing_ind = 5 i.e. "latitude band crossing"
@@ -289,7 +322,10 @@ class Mgrs {
 
     // "lat_crossing_mid_to_point" is the number of squares moving North from "square.row" to "latitude band crossing" + "offset".
     // In the case where "square.row" sits North of "latitude band crossing" + "offset" we get a 'wrapped' distance.
-    const lat_crossing_mid_to_point = this.modulo(lat_crossing_offset_ind - point_ind, NUMBER_MGRS_ROW_LETTERS);
+    const lat_crossing_mid_to_point = this.modulo(
+      lat_crossing_offset_ind - point_ind,
+      NUMBER_MGRS_ROW_LETTERS
+    );
 
     // The following is used to determine if "square.row" is North or South of latitude band crossing.
     // "point_ind" and "lat_crossing_ind" + "offset" lie on a continuous spectrum of MGRS square rows (A - V).
@@ -332,9 +368,11 @@ class Mgrs {
     let row_cycles = 0;
 
     // Determine if "square.row" is North or South of "latitude band crossing".
-    if (NUMBER_MGRS_ROW_LETTERS - lat_crossing_mid_to_point > lat_crossing_mid_to_point &&
-    lat_crossing_mid_to_point > offset)
-    {
+    if (
+      NUMBER_MGRS_ROW_LETTERS - lat_crossing_mid_to_point >
+        lat_crossing_mid_to_point &&
+      lat_crossing_mid_to_point > offset
+    ) {
       // "square.row" is South of "latitude band crossing" (scenario is Fig 3. or Fig 4.).
       // Determine if "lat band crossing datum" and "datum square" are the same square.
       // 0 : No "datum square" between the southern edge of "latitude band crossing" and "square.row".
@@ -348,10 +386,10 @@ class Mgrs {
       //      This is the scenario in Fig 4. i.e. "lat band crossing datum" and "datum square" are different squares.
       const offset_cycles_south = (lat_crossing_ind > point_ind) ? 0 : -1;
 
-      // @ts-ignore
-      row_cycles = parseInt(Math.floor(nearest_northing_index / NUMBER_MGRS_ROW_LETTERS)) + offset_cycles_south;
-    }
-    else {
+      row_cycles =
+        Math.floor(nearest_northing_index / NUMBER_MGRS_ROW_LETTERS) +
+        offset_cycles_south;
+    } else {
       // "square.row" is North of "latitude band crossing" (scenario is Fig 1. or Fig 2.).
       if (lat_crossing_ind > point_ind)
       {
@@ -359,14 +397,14 @@ class Mgrs {
         // This is the scenario in Fig 2 i.e. "lat band crossing datum" and "datum square" are different squares.
         // Move North to the "datum square" by rounding up.
         // @ts-ignore
-        row_cycles = parseInt(Math.ceil(nearest_northing_index / parseFloat(NUMBER_MGRS_ROW_LETTERS)));
+        row_cycles = Math.ceil(nearest_northing_index / NUMBER_MGRS_ROW_LETTERS);
       } else {
         // There is no "datum square" between the southern edge of lat band crossing and "square.row".
         // This is the scenario in Fig 1 (ignoring the "equator" line for Southern Hemisphere)
         // i.e. "lat band crossing datum" and "datum square" are the same square.
         // Move South to the "datum square" by rounding down.
         // @ts-ignore
-        row_cycles = parseInt(Math.floor(nearest_northing_index / parseFloat(NUMBER_MGRS_ROW_LETTERS)));
+        row_cycles = Math.floor(nearest_northing_index / NUMBER_MGRS_ROW_LETTERS);
       }
     }
 
@@ -374,24 +412,19 @@ class Mgrs {
 
     // Apply offset for Southern hemisphere only
     const false_northing = square.lat_band < 'N' ? FALSE_NORTHING : 0;
-    northing_origin = northing_index * M_PER_MGRS_SQUARE + false_northing;
+    const northing_origin = northing_index * M_PER_MGRS_SQUARE + false_northing;
 
-    return [
-      easting_origin, northing_origin
-    ];
-
+    return [easting_origin, northing_origin];
   }
 
-  mgrs_square_origin_arr(EN)
-  {
+  mgrs_square_origin_arr(EN) {
     return [
       Math.floor(EN[0] / 100000) * 100000,
-      Math.floor(EN[1] / 100000) * 100000
+      Math.floor(EN[1] / 100000) * 100000,
     ];
   }
 
-  mgrs_square(EN, has_false_northing, utm_zone)
-  {
+  mgrs_square(EN, has_false_northing, utm_zone) {
     const square = {};
     square.utm_zone = utm_zone;
     square.lat_band = this.northing_to_lat_band(EN[1], has_false_northing);
@@ -422,7 +455,7 @@ class Mgrs {
     // edge) at 100000m, so the index needs a -1.
     // UTM coords don't actually reach to below 100km easting.
     // @ts-ignore
-    const easting_index = parseInt(Math.floor(EN[0] / 100000) - 1);
+    const easting_index = Math.floor(EN[0] / 100000) - 1;
     const column_id = column_start + easting_index;
     if (column_id > 23) {
       throw new Error('Column id out of range');
@@ -435,47 +468,45 @@ class Mgrs {
     const false_northing = has_false_northing ? FALSE_NORTHING : 0;
     const northing = EN[1] - false_northing;
     // @ts-ignore
-    const northing_index = parseInt(Math.floor(northing / 100000));
+    const northing_index = Math.floor(northing / 100000);
     const row_id_full = northing_index + row_start;
     // Index A-V (20), wraps around, increasing in the north direction.
-    // Just south of equator is V.
+    // Just south of the equator is V.
     // Use euclidean modulo.
     // @ts-ignore
-    const row_id = row_id_full - parseInt(Math.floor(row_id_full / 20.0) * 20);
-    if (row_id > 23 || row_id < 0)
-      throw new Error("Row id out of range");
+    const row_id = row_id_full - Math.floor(row_id_full / 20.0) * 20;
+    if (row_id > 23 || row_id < 0) {
+      throw new Error('Row id out of range');
+    }
 
     square.row = MGRS_LETTER[row_id];
 
     return square;
   }
 
-  utm_to_mgrs(EN, has_false_northing, utm_zone)
-  {
-    let ret = {};
+  utm_to_mgrs(EN, has_false_northing, utm_zone) {
+    const ret = {};
     ret.square = this.mgrs_square(EN, has_false_northing, utm_zone);
-    let square_utm_origin = this.mgrs_square_origin(EN);
+    const square_utm_origin = this.mgrs_square_origin(EN);
     ret.EN[0] = EN[0] - square_utm_origin[0];
     ret.EN[1] = EN[1] - square_utm_origin[1];
     return ret;
   }
 
-  utm_to_mgrs_square(EN, square)
-  {
-    let ret = {};
-    let square_utm_origin = this.mgrs_square_origin(square);
+  utm_to_mgrs_square(EN, square) {
+    const ret = {};
+    const square_utm_origin = this.mgrs_square_origin(square);
     ret.square = square;
     ret.EN[0] = EN[0] - square_utm_origin[0];
     ret.EN[1] = EN[1] - square_utm_origin[1];
     return ret;
   }
 
-  mgrs_to_utm(mgrs_coords, square)
-  {
+  mgrs_to_utm(mgrs_coords, square) {
     const square_utm_origin = this.mgrs_square_origin(square);
     return [
       mgrs_coords[0] + square_utm_origin[0],
-      mgrs_coords[1] + square_utm_origin[1]
+      mgrs_coords[1] + square_utm_origin[1],
     ];
   }
 
@@ -500,12 +531,15 @@ class Mgrs {
   validate(square)
   {
     if (square.utm_zone > 60)
-      throw new Error("MGRS Square Invalid: Invalid UTM zone.");
+      throw new Error('MGRS Square Invalid: Invalid UTM zone.');
 
-    if (!(square.lat_band === square.lat_band.toUpperCase()
+    if (
+      !(
+        square.lat_band === square.lat_band.toUpperCase()
           && square.column === square.column.toUpperCase()
-          && square.row === square.row.toUpperCase()))
+          && square.row === square.row.toUpperCase())) {
       throw new Error("MGRS Square Invalid: Lowercase not permitted.");
+    }
   }
 
 }
@@ -535,13 +569,18 @@ class KarneyKruegerConstants
     const n8 = n4 * n4;
 
     // rectifying radius A
-    this.A = this.a / (1.0 + n) * (1 + n2 / 4 + n4 / 64 + n6 / 256 + n8 * 25.0 / 16384);
+    this.A = a / (1.0 + n) * (1 + n2 / 4 + n4 / 64 + n6 / 256 + n8 * 25.0 / 16384);
 
     // coefficients (via horner form)
     this.alpha[0] = (n
-        * (n * (n * (n * (n * (n * ((37884525 - 75900428 * n) * n + 42422016) - 89611200) + 46287360) +
-            63504000) - 135475200)
-          + 101606400))
+        (n *
+          (n *
+            (n *
+              (n * (n * ((37884525 - 75900428 * n) * n + 42422016) - 89611200) +
+                46287360) +
+              63504000) -
+            135475200) +
+          +101606400
       / 203212800;
     this.alpha[1] = (n2 * (n * (n * (n * (n * (n * (148003883 * n + 83274912) - 178508970) + 77690880) + 67374720) -
         104509440) + 47174400))
