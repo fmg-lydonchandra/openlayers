@@ -16,6 +16,10 @@ class PtclJSON extends JSONFeature {
     this.dataProjection = getProjection(
       options.dataProjection ? options.dataProjection : 'EPSG:4326'
     );
+    this.mgrsSquare = options.mgrsSquare;
+    if (!this.mgrsSquare) {
+      throw new Error("mgrsSquare is not set");
+    }
   }
 
   readFeatureFromObject(object, options) {
@@ -30,12 +34,12 @@ class PtclJSON extends JSONFeature {
       return features;
     }
 
-    const mgrsSquare = {
-      utm_zone: 50,
-      lat_band: 'J',
-      column: 'M',
-      row: 'K',
-    }
+    // const mgrsSquare = {
+    //   utm_zone: 50,
+    //   lat_band: 'J',
+    //   column: 'M',
+    //   row: 'K',
+    // }
 
     for (let i = 0, ii = object.AreaMapDePtr.pathSections.length; i < ii; i++) {
     // for (let i = 0, ii = 1; i < ii; i++) {
@@ -51,8 +55,8 @@ class PtclJSON extends JSONFeature {
           pathSecElem.referencePoint.y / 1000,
         ];
         const mgrsInst = new Mgrs();
-        const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, mgrsSquare);
-        ribCoords.push(this.getCoordinates(pathSecElem, mgrsSquare))
+        const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, this.mgrsSquare);
+        ribCoords.push(this.getCoordinates(pathSecElem, this.mgrsSquare))
         centreLines.push(centerPoint);
       }
       let boundaryGeom = this.getBoundary(ribCoords);

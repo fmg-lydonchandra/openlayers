@@ -71,7 +71,13 @@ const ptclSource = new VectorSource({
   url: 'HazelmerePathSectionsOnlyPtcl.json',
   format: new PtclJSON({
     dataProjection: 'EPSG:28350',
-    style: style
+    style: style,
+    mgrsSquare: {
+      utm_zone: 50,
+      lat_band: 'J',
+      column: 'M',
+      row: 'K',
+    }
   }),
   overlaps: false,
 });
@@ -85,7 +91,13 @@ const ptclSourceSnap = new VectorSource({
   url: 'HazelmerePathSectionsOnlyPtcl.json',
   format: new PtclJSON({
     dataProjection: 'EPSG:28350',
-    style: style
+    style: style,
+    mgrsSquare: {
+      utm_zone: 50,
+      lat_band: 'J',
+      column: 'M',
+      row: 'K',
+    }
   }),
   overlaps: false,
 });
