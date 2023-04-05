@@ -5,6 +5,7 @@ import {get as getProjection} from '../proj.js';
 import Feature from '../Feature.js';
 import {LineString} from '../geom.js';
 import Mgrs from '../../../public/mgrs.js';
+import Polygon from '../geom/Polygon.js';
 
 class PtclJSON extends JSONFeature {
   constructor(options) {
@@ -28,35 +29,103 @@ class PtclJSON extends JSONFeature {
     if (!object.AreaMapDePtr.pathSections) {
       return features;
     }
-    let centreLines = [];
+
+    const mgrsSquare = {
+      utm_zone: 50,
+      lat_band: 'J',
+      column: 'M',
+      row: 'K',
+    }
 
     for (let i = 0, ii = object.AreaMapDePtr.pathSections.length; i < ii; i++) {
       const pathSec = object.AreaMapDePtr.pathSections[i];
       const feature = new Feature();
+      let centreLines = [];
+      let ribCoords = [];
       for (let j = 0; j < pathSec.numElements; j++) {
-        const elem = pathSec.elements[j];
+        const pathSecElem = pathSec.elements[j];
         const centerPointMgrs = [
-          elem.referencePoint.x / 1000,
-          elem.referencePoint.y / 1000,
+          pathSecElem.referencePoint.x / 1000,
+          pathSecElem.referencePoint.y / 1000,
         ];
         const mgrsInst = new Mgrs();
-        const mgrsSquare = {
-          utm_zone: 50,
-          lat_band: 'J',
-          column: 'M',
-          row: 'K',
-        }
         const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, mgrsSquare);
+        ribCoords.push(this.getCoordinates(pathSecElem, mgrsSquare))
         centreLines.push(centerPoint);
       }
-      let geom = new LineString(centreLines);
-      const transformed = geom.transform('EPSG:28350', 'EPSG:3857');
+      let boundaryGeom = this.getBoundary(ribCoords, mgrsSquare);
+      const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
+
+      let centreLineGeom = new LineString(centreLines);
+      const transformed = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
       feature.setId("ptcl_" + pathSec.id);
-      feature.setGeometry(transformed);
+      // feature.setGeometry(transformed);
+      feature.setGeometry(boundaryTransformed);
       features.push(feature);
     }
     console.log(features)
     return features;
+  }
+
+  getBoundary(ribCoords, mgrsSquare) {
+    const boundaryCoords = [];
+    if(ribCoords < 2) {
+      throw new Error('pathSectionElements < 2');
+    }
+    const firstRib = ribCoords[0];
+    boundaryCoords.push(firstRib[2]);
+    boundaryCoords.push(firstRib[1]);
+    boundaryCoords.push(firstRib[0]);
+
+    // add left boundary
+    for (let i = 1; i < ribCoords.Count - 1; i++)
+    {
+      let rib = ribCoords[i];
+      boundaryCoords.push(rib[0]);
+    }
+
+    let lastRib = ribCoords[ribCoords.length-1];
+    boundaryCoords.push(lastRib[0]);
+    boundaryCoords.push(lastRib[1]);
+    boundaryCoords.push(lastRib[2]);
+
+    // add right boundary
+    for (let i = ribCoords.Count - 2; i >= 0; i--)
+    {
+      let rib = ribCoords[i];
+      boundaryCoords.push(rib[2]);
+    }
+
+    return new LineString(boundaryCoords);
+  }
+
+  static roundAwayFromZero = v => v < 0 ? Math.ceil(v - .5) : Math.floor(+v + .5);
+
+  getCoordinates(rib, mgrsSquare)
+  {
+    const mgrsInst = new Mgrs();
+
+    // TO DO: implement using NetTopologySuite
+    const angle = (rib.referenceHeading / 100) + (Math.PI / 2);
+    // 90 degrees to direction
+    const left = [
+      PtclJSON.roundAwayFromZero(rib.referencePoint.x / 1000 + rib.leftEdge.distanceFromReferencePoint / 100 * Math.cos(angle)),
+      PtclJSON.roundAwayFromZero(rib.referencePoint.y / 1000 + rib.leftEdge.distanceFromReferencePoint / 100 * Math.sin(angle))
+    ];
+    const center = [
+      PtclJSON.roundAwayFromZero(rib.referencePoint.x / 1000),
+      PtclJSON.roundAwayFromZero(rib.referencePoint.y / 1000)
+    ];
+    var right = [
+      PtclJSON.roundAwayFromZero(rib.referencePoint.x / 1000 - rib.rightEdge.distanceFromReferencePoint / 100 * Math.cos(angle)),
+      PtclJSON.roundAwayFromZero(rib.referencePoint.y / 1000 - rib.rightEdge.distanceFromReferencePoint / 100 * Math.sin(angle))
+    ];
+
+    return [
+      mgrsInst.mgrs_to_utm(left, mgrsSquare),
+      mgrsInst.mgrs_to_utm(center, mgrsSquare),
+      mgrsInst.mgrs_to_utm(right, mgrsSquare)
+    ];
   }
 
   readGeometryFromObject(object, options) {
