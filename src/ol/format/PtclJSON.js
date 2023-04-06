@@ -47,7 +47,7 @@ class PtclJSON extends JSONFeature {
       const feature = new Feature();
       let centreLines = [];
       let ribCoords = [];
-      console.log('pathSec.numElements',pathSec.numElements)
+      // console.log('pathSec.numElements',pathSec.numElements)
       for (let j = 0; j < pathSec.numElements; j++) {
         const pathSecElem = pathSec.elements[j];
         const centerPointMgrs = [
@@ -60,7 +60,7 @@ class PtclJSON extends JSONFeature {
         centreLines.push(centerPoint);
       }
       let boundaryGeom = this.getBoundary(ribCoords);
-      console.log("boundaryGeom", boundaryGeom)
+      // console.log("boundaryGeom", boundaryGeom)
       const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
       let centreLineGeom = new LineString(centreLines);
@@ -70,12 +70,12 @@ class PtclJSON extends JSONFeature {
       feature.setGeometry(boundaryTransformed);
       features.push(feature);
     }
-    console.log(features)
+    // console.log(features)
     return features;
   }
 
   getBoundary(ribCoords) {
-    console.log('ribCoords', ribCoords)
+    // console.log('ribCoords', ribCoords)
     const boundaryCoords = [];
     if(ribCoords < 2) {
       throw new Error('pathSectionElements < 2');
@@ -103,7 +103,6 @@ class PtclJSON extends JSONFeature {
       let rib = ribCoords[i];
       boundaryCoords.push(rib[2]);
     }
-    console.log("boundaryCoords", boundaryCoords)
     return new Polygon([ boundaryCoords ]);
   }
 

@@ -14,11 +14,26 @@ import {defaults as defaultControls} from '../src/ol/control/defaults.js';
 import {ZoomToExtent} from '../src/ol/control.js';
 import BingMaps from '../src/ol/source/BingMaps.js';
 import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
+import {LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon} from '../src/ol/geom.js';
+import LinearRing from '../src/ol/geom/LinearRing.js';
+import multiLineString from '../build/ol/geom/MultiLineString.js';
+import GeoJSON from '../build/ol/format/GeoJSON.js';
 
 const key = 'get_your_own_D6rA4zTHduk6KOKTXzGB';
 const attributions =
   '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> ' +
   '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>';
+
+const parser = new jsts.io.OL3Parser();
+parser.inject(
+  Point,
+  LineString,
+  LinearRing,
+  Polygon,
+  MultiPoint,
+  MultiLineString,
+  MultiPolygon
+);
 
 const raster = new TileLayer({
   source: new XYZ({
@@ -54,6 +69,13 @@ proj4.defs(
 );
 register(proj4);
 
+
+const source = new VectorSource({wrapX: false});
+const vector = new VectorLayer({
+  source: source,
+});
+
+
 const vector2 = new VectorLayer({
   source: new VectorSource({
     url: 'data/topojson/world-110m.json',
@@ -79,6 +101,12 @@ const ptclSource = new VectorSource({
       row: 'K',
     }
   }),
+  overlaps: false,
+});
+
+const geojsonSource = new VectorSource({
+  url: 'HazelmerePathSectionsOnlyPtcl.json',
+  format: new GeoJSON(),
   overlaps: false,
 });
 
@@ -120,7 +148,7 @@ const bing = new TileLayer({
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, vectorPtclSnap ],
+  layers: [ bing, vectorPtcl, vectorPtclSnap, vector ],
   target: 'map',
   view: new View({
     center: [0, 0],
@@ -144,11 +172,146 @@ const modify = new Modify({
   features: select.getFeatures(),
 });
 
+const geometryFunction2 = function(coordinates, geometry) {
+  var line = {
+    "type": "Feature",
+    "properties": {},
+    "geometry": {
+      "type": "LineString",
+      "coordinates": coordinates
+    }
+  };
+
+  const parser = new jsts.io.OL3Parser();
+  parser.inject(
+    Point,
+    LineString,
+    LinearRing,
+    Polygon,
+    MultiPoint,
+    MultiLineString,
+    MultiPolygon
+  );
+
+  var curved = turf.bezier(line);
+
+  //todo: turf.buffer returns things in latlong, maybe use jsts?
+  // var buffered = turf.buffer(curved, 10, {units: 'meters'});
+  // console.log('buffered', buffered);
+  if (geometry) {
+    geometry.setCoordinates(curved["geometry"]["coordinates"]);
+
+    const jstsGeom = parser.read(geometry);
+    const laneWidth = 20;
+    const buffered = jstsGeom.buffer(laneWidth / 2.0);
+    geometry = parser.write(buffered);
+    // debugger
+
+  } else {
+    geometry = new LineString(coordinates);
+  }
+
+  return geometry;
+}
+
+const geometryFunctionPolygon = function(coordinates, geometry) {
+  var line = {
+    "type": "Feature",
+    "properties": {},
+    "geometry": {
+      "type": "LineString",
+      "coordinates": coordinates[0]
+    }
+  };
+
+  const parser = new jsts.io.OL3Parser();
+  parser.inject(
+    Point,
+    LineString,
+    LinearRing,
+    Polygon,
+    MultiPoint,
+    MultiLineString,
+    MultiPolygon
+  );
+
+  var curved = turf.bezier(line);
+
+  //todo: turf.buffer returns things in latlong, maybe use jsts?
+  // var buffered = turf.buffer(curved, 10, {units: 'meters'});
+  // console.log('buffered', buffered);
+  if (geometry) {
+    let coords = curved["geometry"]["coordinates"];
+    // set last to first, to close polygon
+    // coords.push(coords[0]);
+    let lineString1 = new LineString(coords);
+    // geometry.setCoordinates([coords]);
+
+    const jstsGeom = parser.read(lineString1);
+    const laneWidth = 20;
+    const buffered = jstsGeom.buffer(laneWidth / 2.0);
+    const parsedGeom = parser.write(buffered);
+    geometry.setCoordinates(parsedGeom.getCoordinates())
+
+    // geometry.appendLineString(lineString1);
+    // const all = geometry.getLineStrings();
+    // let last = all[all.length-1];
+    // last = lineString1;
+
+    // debugger
+
+  } else {
+    geometry = new Polygon([]);
+  }
+
+  return geometry;
+}
+
+
 const draw = new Draw({
   type: 'LineString',
   // type: 'Polygon',
   source: vectorPtcl,
+  // geometryFunction: geometryFunction2
 });
+
+const drawPolygon = new Draw({
+  type: 'Polygon',
+  source: source,
+  geometryFunction: geometryFunctionPolygon
+});
+
+// draw.on('drawend', function(e) {
+//   var lineString = e.feature.getGeometry();
+//   console.log('drawend', lineString)
+//
+//   var multiLineString = new MultiLineString([]);
+//   multiLineString.appendLineString(lineString);
+//   var size = lineString.getLength() / 20; // or use a fixed size if you prefer
+//   var coords = lineString.getCoordinates();
+//   // start
+//   var dx = coords[1][0] - coords[0][0];
+//   var dy = coords[1][1] - coords[0][1];
+//   var rotation = Math.atan2(dy, dx);
+//   var startLine = new LineString([
+//     [coords[0][0], coords[0][1] - size],
+//     [coords[0][0], coords[0][1] + size]
+//   ]);
+//   startLine.rotate(rotation, coords[0]);
+//   // end
+//   var lastIndex = coords.length - 1;
+//   var dx = coords[lastIndex - 1][0] - coords[lastIndex][0];
+//   var dy = coords[lastIndex - 1][1] - coords[lastIndex][1];
+//   var rotation = Math.atan2(dy, dx);
+//   var endLine = new LineString([
+//     [coords[lastIndex][0], coords[lastIndex][1] - size],
+//     [coords[lastIndex][0], coords[lastIndex][1] + size]
+//   ]);
+//   endLine.rotate(rotation, coords[lastIndex]);
+//   multiLineString.appendLineString(startLine);
+//   multiLineString.appendLineString(endLine);
+//   e.feature.setGeometry(multiLineString);
+// });
 
 const snap = new Snap({
   source: ptclSourceSnap,
@@ -157,5 +320,6 @@ const snap = new Snap({
 
 // map.addInteraction(select);
 // map.addInteraction(modify);
-map.addInteraction(draw);
+// map.addInteraction(draw);
+map.addInteraction(drawPolygon);
 map.addInteraction(snap);
