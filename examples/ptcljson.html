@@ -9,6 +9,14 @@ cloak:
   - key: get_your_own_D6rA4zTHduk6KOKTXzGB
     value: Get your own API key at https://www.maptiler.com/cloud/
 resources:
-  - https://cdn.jsdelivr.net/npm/jsts@2.3.0/dist/jsts.min.js
+  - https://cdn.jsdelivr.net/npm/jsts@2.9.3/dist/jsts.min.js
+  - http://localhost:8080/vector.js
 ---
 <div id="map" class="map"></div>
+<form>
+  <label for="type">Control type</label>
+  <select id="type">
+    <option value="Draw" selected>Draw</option>
+    <option value="Modify">Modify</option>
+  </select>
+</form>

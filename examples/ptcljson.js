@@ -6,7 +6,7 @@ import VectorSource from '../src/ol/source/Vector.js';
 import View from '../src/ol/View.js';
 import XYZ from '../src/ol/source/XYZ.js';
 import proj4 from 'proj4';
-import {Fill, Stroke, Style} from '../src/ol/style.js';
+import {Circle, Fill, Stroke, Style} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
 import {register} from '../src/ol/proj/proj4.js';
 import TopoJSON from '../src/ol/format/TopoJSON.js';
@@ -14,6 +14,7 @@ import {defaults as defaultControls} from '../src/ol/control/defaults.js';
 import {ZoomToExtent} from '../src/ol/control.js';
 import BingMaps from '../src/ol/source/BingMaps.js';
 import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
+
 import {
   GeometryCollection,
   LineString,
@@ -57,6 +58,12 @@ const raster = new TileLayer({
 });
 
 const style = new Style({
+  image: new Circle({
+    radius: 5,
+    fill: new Fill({
+      color: 'rgba(255,255,255,0.4)'
+    }),
+  }),
   fill: new Fill({
     color: 'rgba(255, 255, 255, 0.6)',
   }),
@@ -176,224 +183,93 @@ map.on('loadend', function () {
   }
 });
 
-
 const select = new Select();
 
 const modify = new Modify({
   features: select.getFeatures(),
+  insertVertexCondition: false
 });
 
-const geometryFunction2 = function(coordinates, geometry) {
-  var line = {
-    "type": "Feature",
-    "properties": {},
-    "geometry": {
-      "type": "LineString",
-      "coordinates": coordinates
-    }
-  };
-
-  const parser = new jsts.io.OL3Parser();
-  parser.inject(
-    Point,
-    LineString,
-    LinearRing,
-    Polygon,
-    MultiPoint,
-    MultiLineString,
-    MultiPolygon
-  );
-  // todo: non turfjs bezier so doesn't need geojson
-  var curved = turf.bezier(line);
-
-  //todo: turf.buffer returns things in latlong, maybe use jsts?
-  // var buffered = turf.buffer(curved, 10, {units: 'meters'});
-  // console.log('buffered', buffered);
-  if (geometry) {
-    geometry.setCoordinates(curved["geometry"]["coordinates"]);
-
-    const jstsGeom = parser.read(geometry);
-    const laneWidth = 20;
-    const buffered = jstsGeom.buffer(laneWidth / 2.0);
-    geometry = parser.write(buffered);
-    // debugger
-
-  } else {
-    geometry = new LineString(coordinates);
-  }
-
-  return geometry;
-}
-
-const geometryFunctionPolygon = function(coordinates, geometry) {
-  var line = {
-    "type": "Feature",
-    "properties": {},
-    "geometry": {
-      "type": "LineString",
-      "coordinates": coordinates[0]
-    }
-  };
-
-  const parser = new jsts.io.OL3Parser();
-  parser.inject(
-    Point,
-    LineString,
-    LinearRing,
-    Polygon,
-    MultiPoint,
-    MultiLineString,
-    MultiPolygon
-  );
-
-  var curved = turf.bezier(line);
-
-  //todo: turf.buffer returns things in latlong, maybe use jsts?
-  // var buffered = turf.buffer(curved, 10, {units: 'meters'});
-  // console.log('buffered', buffered);
-  if (geometry) {
-    let coords = curved["geometry"]["coordinates"];
-    // set last to first, to close polygon
-    // coords.push(coords[0]);
-    let lineString1 = new LineString(coords);
-    // geometry.setCoordinates([coords]);
-
-    const jstsGeom = parser.read(lineString1);
-    const laneWidth = 20;
-    debugger
-    const PERPENDICULAR_TO_FEATURE = 2;
-    const buffered = jstsGeom.buffer(laneWidth / 2.0, 6, PERPENDICULAR_TO_FEATURE);
-    // const buffered = jsts.operation.buffer.BufferOp.(jstsGeom, laneWidth / 2.0, 1);
-
-    const parsedGeom = parser.write(buffered);
-    geometry.setCoordinates(parsedGeom.getCoordinates())
-
-    // geometry.appendLineString(lineString1);
-    // const all = geometry.getLineStrings();
-    // let last = all[all.length-1];
-    // last = lineString1;
-
-    // debugger
-
-  } else {
-    geometry = new Polygon([]);
-  }
-
-  return geometry;
-}
-
-
-const geometryFunctionFmsLane = function(coordinates, geometry, projection) {
+const MaxLaneLengthMeters = 50;
+const MaxLanePoints = 100;
+const BoundaryIx = 0;
+const RibsIx = 1;
+const CenterLineIx = 2;
+const HalfLaneWidthMeter = 10;
+const geometryFunctionFmsLane = function(coordinates, geometry) {
+  let currentIx = coordinates.length-1;
+  // console.log('currentIx', currentIx)
   if (!geometry) {
     geometry = new GeometryCollection([
       new Polygon([]), // boundary
-      new Point(coordinates[0]),
+      new MultiLineString([[]]),
       new LineString(coordinates)
     ]);
+    geometry.getGeometries()[RibsIx].appendLineString(new LineString([]));
+    return geometry;
+  }
+
+  if(currentIx === 0) {
     return geometry;
   }
   const geometries = geometry.getGeometries();
-  // const center = transform(coordinates[0], projection, 'EPSG:4326');
-  // const last = transform(coordinates[1], projection, 'EPSG:4326');
-  // const radius = getDistance(center, last);
-  // const circle = circular(center, radius, 128);
-  // circle.transform('EPSG:4326', projection);
-  // geometries[0].setCoordinates(circle.getCoordinates());
-  var line = {
-    "type": "Feature",
-    "properties": {},
-    "geometry": {
-      "type": "LineString",
-      "coordinates": coordinates
+
+  // const parser = new jsts.io.OL3Parser();
+  // parser.inject(
+  //   Point,
+  //   LineString,
+  //   LinearRing,
+  //   Polygon,
+  //   MultiPoint,
+  //   MultiLineString,
+  //   MultiPolygon
+  // );
+  let lineString1 = new LineString(coordinates);
+  // lineString1 = lineString1.simplify(MaxLaneLengthMeters / MaxLanePoints )
+  const centerLineCoords = lineString1.getCoordinates();
+  geometries[CenterLineIx].setCoordinates(centerLineCoords);
+
+  geometries[RibsIx] = new MultiLineString([[]]);
+  for (let i = 1; i < coordinates.length; i++) {
+    const curCoord = coordinates[i]
+    const prevCoord = coordinates[i-1]
+    let prev = new Vector(prevCoord[0], prevCoord[1]);
+    let cur = new Vector(curCoord[0], curCoord[1])
+    let direction = Vector.sub(cur, prev)
+    if (Vector.len(direction) === 0) {
+      continue;
     }
-  };
-  var curved = turf.bezier(line);
-  let coords = curved["geometry"]["coordinates"];
-  geometries[2].setCoordinates([coords]);
 
-  const parser = new jsts.io.OL3Parser();
-  parser.inject(
-    Point,
-    LineString,
-    LinearRing,
-    Polygon,
-    MultiPoint,
-    MultiLineString,
-    MultiPolygon
-  );
-  let lineString1 = new LineString(coords);
-  const jstsGeom = parser.read(lineString1);
-  const laneWidth = 20;
-  const PERPENDICULAR_TO_FEATURE = 2;
-  const buffered = jstsGeom.buffer(laneWidth / 2.0, 6, PERPENDICULAR_TO_FEATURE);
-  const parsedGeom = parser.write(buffered);
-  geometries[0].setCoordinates(parsedGeom.getCoordinates());
-  geometry.setGeometries(geometries);
+    let directionNorm = Vector.normalize(direction)
+    let directionLaneWidth = Vector.mul(directionNorm, HalfLaneWidthMeter)
+    let leftRibVec = Vector.add(prev, directionLaneWidth);
+    let leftRib = new LineString(
+        [
+          prevCoord,
+          [leftRibVec.x, leftRibVec.y],
+        ]);
+    leftRib.rotate(Math.PI / 2.0, prevCoord);
+    geometries[RibsIx].appendLineString(leftRib);
 
-
-  return geometry;
-
-  console.log(coordinates, geometry, c, d)
-  var line = {
-    "type": "Feature",
-    "properties": {},
-    "geometry": {
-      "type": "LineString",
-      "coordinates": coordinates[0]
-    }
-  };
-
-
-
-  var curved = turf.bezier(line);
-
-  //todo: turf.buffer returns things in latlong, maybe use jsts?
-  // var buffered = turf.buffer(curved, 10, {units: 'meters'});
-  // console.log('buffered', buffered);
-  if (geometry) {
-    let coords = curved["geometry"]["coordinates"];
-    // set last to first, to close polygon
-    // coords.push(coords[0]);
-    let lineString1 = new LineString(coords);
-    // geometry.setCoordinates([coords]);
-
-    const jstsGeom = parser.read(lineString1);
-    const laneWidth = 20;
-    debugger
-    const PERPENDICULAR_TO_FEATURE = 2;
-    const buffered = jstsGeom.buffer(laneWidth / 2.0, 6, PERPENDICULAR_TO_FEATURE);
-    // const buffered = jsts.operation.buffer.BufferOp.(jstsGeom, laneWidth / 2.0, 1);
-
-    const parsedGeom = parser.write(buffered);
-    geometry.setCoordinates(parsedGeom.getCoordinates())
-
-    // geometry.appendLineString(lineString1);
-    // const all = geometry.getLineStrings();
-    // let last = all[all.length-1];
-    // last = lineString1;
-
-    // debugger
-
-  } else {
-    geometry = new Polygon([]);
+    let rightRib = new LineString(
+      [
+        prevCoord,
+        [leftRibVec.x, leftRibVec.y],
+      ]);
+    rightRib.rotate(-Math.PI / 2.0, prevCoord);
+    geometries[RibsIx].appendLineString(rightRib);
   }
 
+  // const jstsGeom = parser.read(lineString1);
+  // const PERPENDICULAR_TO_FEATURE = 2;
+  // const buffered = jstsGeom.buffer(HalfLaneWidthMeter, 6, PERPENDICULAR_TO_FEATURE);
+  // const bufferedGeom = parser.write(buffered);
+  // geometries[BoundaryIx].setCoordinates(bufferedGeom.getCoordinates());
+  geometry.setGeometries(geometries);
+
+  // console.log(coordinates, geometry)
   return geometry;
 }
-
-
-const draw = new Draw({
-  type: 'LineString',
-  // type: 'Polygon',
-  source: vectorPtcl,
-  geometryFunction: geometryFunction2
-});
-
-const drawPolygon = new Draw({
-  type: 'Polygon',
-  source: source,
-  geometryFunction: geometryFunctionPolygon
-});
 
 const drawFmsLane = new Draw({
   type: 'LineString',
@@ -401,6 +277,12 @@ const drawFmsLane = new Draw({
   geometryFunction: geometryFunctionFmsLane
 });
 
+drawFmsLane.on('drawend', (e) => {
+  console.log('drawend', e);
+});
+drawFmsLane.on('drawstart', (e) => {
+  console.log('drawstart', e);
+})
 // draw.on('drawend', function(e) {
 //   var lineString = e.feature.getGeometry();
 //   console.log('drawend', lineString)
@@ -437,10 +319,21 @@ const snap = new Snap({
   source: ptclSourceSnap,
 });
 
-
-// map.addInteraction(select);
-// map.addInteraction(modify);
-// map.addInteraction(draw);
-// map.addInteraction(drawPolygon);
 map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
+
+const typeSelect = document.getElementById('type');
+typeSelect.onchange = function () {
+  let value = typeSelect.value;
+  if (value === 'Draw') {
+    map.addInteraction(drawFmsLane);
+    map.addInteraction(snap);
+  } else {
+    map.removeInteraction(drawFmsLane);
+    map.removeInteraction(snap);
+
+    map.addInteraction(select);
+    map.addInteraction(modify);
+  }
+
+};
