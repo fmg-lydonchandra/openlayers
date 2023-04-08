@@ -6,7 +6,7 @@ import VectorSource from '../src/ol/source/Vector.js';
 import View from '../src/ol/View.js';
 import XYZ from '../src/ol/source/XYZ.js';
 import proj4 from 'proj4';
-import {Circle, Fill, Stroke, Style} from '../src/ol/style.js';
+import {Circle as CircleStyle, Circle, Fill, Stroke, Style, Text} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
 import {register} from '../src/ol/proj/proj4.js';
 import TopoJSON from '../src/ol/format/TopoJSON.js';
@@ -30,32 +30,20 @@ import GeoJSON from '../build/ol/format/GeoJSON.js';
 import {transform} from '../src/ol/proj.js';
 import {getDistance} from '../src/ol/sphere.js';
 import {circular} from '../src/ol/geom/Polygon.js';
+import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
+import {never} from '../src/ol/events/condition.js';
 
 const key = 'get_your_own_D6rA4zTHduk6KOKTXzGB';
 const attributions =
   '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> ' +
   '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>';
 
-const parser = new jsts.io.OL3Parser();
-parser.inject(
-  Point,
-  LineString,
-  LinearRing,
-  Polygon,
-  MultiPoint,
-  MultiLineString,
-  MultiPolygon
-);
-
-const raster = new TileLayer({
-  source: new XYZ({
-    attributions: attributions,
-    // url: 'https://api.maptiler.com/maps/darkmatter/{z}/{x}/{y}.png?key=' + key,
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-
-    tileSize: 512,
-  }),
-});
+const MaxLaneLengthMeters = 50;
+const MaxLanePoints = 100;
+const BoundaryIx = 0;
+const RibsIx = 1;
+const CenterLineIx = 2;
+const HalfLaneWidthMeter = 10;
 
 const style = new Style({
   image: new Circle({
@@ -87,26 +75,91 @@ proj4.defs(
 );
 register(proj4);
 
+function calculateCenter(geometry) {
+  let center, coordinates, minRadius;
+  const type = geometry.getType();
+  if (type === 'Polygon') {
+    let x = 0;
+    let y = 0;
+    let i = 0;
+    coordinates = geometry.getCoordinates()[0].slice(1);
+    coordinates.forEach(function (coordinate) {
+      x += coordinate[0];
+      y += coordinate[1];
+      i++;
+    });
+    center = [x / i, y / i];
+  } else if (type === 'LineString') {
+    center = geometry.getCoordinateAt(0.5);
+    coordinates = geometry.getCoordinates();
+  } else {
+    center = getCenter(geometry.getExtent());
+  }
+  let sqDistances;
+  if (coordinates) {
+    sqDistances = coordinates.map(function (coordinate) {
+      const dx = coordinate[0] - center[0];
+      const dy = coordinate[1] - center[1];
+      return dx * dx + dy * dy;
+    });
+    minRadius = Math.sqrt(Math.max.apply(Math, sqDistances)) / 3;
+  } else {
+    minRadius =
+      Math.max(
+        getWidth(geometry.getExtent()),
+        getHeight(geometry.getExtent())
+      ) / 3;
+  }
+  return {
+    center: center,
+    coordinates: coordinates,
+    minRadius: minRadius,
+    sqDistances: sqDistances,
+  };
+}
 
-const source = new VectorSource({wrapX: false});
+
+const source = new VectorSource();
 const vector = new VectorLayer({
   source: source,
+  style: function (feature) {
+    const styles = [style];
+    const modifyGeometry = feature.get('modifyGeometry');
+    const geometry = modifyGeometry
+      ? modifyGeometry.geometry
+      : feature.getGeometry();
+
+    const ribs = geometry.getGeometries()[RibsIx]
+    if (ribs.getLineStrings().length > 0) {
+      const coords = ribs.getLineStrings()
+        .filter(line => line.getCoordinates().length > 0)
+        .map(line => [line.getCoordinates()[0], line.getCoordinates()[2]])
+        .flat(1)
+      ;
+      const ribsLeftRightPoints = new MultiPoint(coords);
+      styles.push(
+        new Style({
+          geometry: ribsLeftRightPoints,
+          image: new CircleStyle({
+            radius: 20,
+            fill: new Fill({
+              color: '#33cc33',
+            }),
+            stroke: new Stroke({
+              color: 'rgba(123, 0, 0, 0.7)',
+            }),
+          }),
+          stroke: new Stroke({
+            color: '#ffcc33',
+            width: 2,
+          }),
+        })
+      );
+    }
+
+    return styles;
+  }
 });
-
-
-const vector2 = new VectorLayer({
-  source: new VectorSource({
-    url: 'data/topojson/world-110m.json',
-    format: new TopoJSON({
-      // don't want to render the full world polygon (stored as 'land' layer),
-      // which repeats all countries
-      layers: ['countries'],
-    }),
-    overlaps: false,
-  }),
-  style: style,
-});
-
 const ptclSource = new VectorSource({
   url: 'HazelmerePathSectionsOnlyPtcl.json',
   format: new PtclJSON({
@@ -121,13 +174,6 @@ const ptclSource = new VectorSource({
   }),
   overlaps: false,
 });
-
-const geojsonSource = new VectorSource({
-  url: 'HazelmerePathSectionsOnlyPtcl.json',
-  format: new GeoJSON(),
-  overlaps: false,
-});
-
 const vectorPtcl = new VectorLayer({
   source: ptclSource,
   style: style,
@@ -161,7 +207,7 @@ const bing = new TileLayer({
     imagerySet: styles[1],
     // use maxZoom 19 to see stretched tiles instead of the BingMaps
     // "no photos at this zoom level" tiles
-    // maxZoom: 19
+    maxZoom: 19
   })});
 
 const map = new Map({
@@ -185,17 +231,91 @@ map.on('loadend', function () {
 
 const select = new Select();
 
-const modify = new Modify({
-  features: select.getFeatures(),
-  insertVertexCondition: false
+const modifyStyle = new Style({
+  image: new CircleStyle({
+    radius: 5,
+    stroke: new Stroke({
+      color: 'rgba(0, 0, 0, 0.7)',
+    }),
+    fill: new Fill({
+      color: 'rgba(0, 0, 0, 0.4)',
+    }),
+  }),
+  text: new Text({
+    text: 'Drag to modify',
+    font: '12px Calibri,sans-serif',
+    fill: new Fill({
+      color: 'rgba(255, 255, 255, 1)',
+    }),
+    backgroundFill: new Fill({
+      color: 'rgba(0, 0, 0, 0.7)',
+    }),
+    padding: [2, 2, 2, 2],
+    textAlign: 'left',
+    offsetX: 15,
+  }),
 });
 
-const MaxLaneLengthMeters = 50;
-const MaxLanePoints = 100;
-const BoundaryIx = 0;
-const RibsIx = 1;
-const CenterLineIx = 2;
-const HalfLaneWidthMeter = 10;
+const defaultStyle = new Modify({source: source})
+  .getOverlay()
+  .getStyleFunction();
+
+const modify = new Modify({
+  source: source,
+  insertVertexCondition: never,
+  // style: modifyStyle
+  style: function (feature) {
+    feature.get('features').forEach(function (modifyFeature) {
+      console.log('modifyFeature', modifyFeature)
+      const modifyGeometry = modifyFeature.get('modifyGeometry');
+      if (modifyGeometry) {
+
+        let modifyRibs = modifyGeometry.ribs
+        if (!modifyRibs) {
+          modifyRibs = modifyGeometry.geometry.getGeometries()[RibsIx]
+          modifyGeometry.ribs = modifyRibs
+        }
+
+        console.log('modifyGeometry',
+          modifyGeometry.geometry.getGeometries()[RibsIx].getLineStrings().map(line => line.getFlatCoordinates()))
+
+        console.log('modifyGeometry.ribs', modifyGeometry.ribs.getLineStrings().map(line => line.getFlatCoordinates()))
+      }
+    })
+    // const laneGeomCol = feature.get('features')[0]
+    // const modifyGeometry = laneGeomCol.get('modifyGeometry');
+    // console.log(modifyGeometry)
+    // if (modifyGeometry) {
+    //   const point = modifyGeometry.geometry.getGeometries()[1].getCoordinates()
+    //   //let modifyPoint =
+    //
+    // }
+    return defaultStyle(feature)
+  }
+});
+modify.on('modifystart', function (event) {
+  event.features.forEach(function (feature) {
+    feature.set(
+      'modifyGeometry',
+      {geometry: feature.getGeometry().clone()},
+      true
+    );
+  });
+});
+
+modify.on('modifyend', function (event) {
+  // event.features.forEach(function (feature) {
+  //   const modifyGeometry = feature.get('modifyGeometry');
+  //   if (modifyGeometry) {
+  //     feature.setGeometry(modifyGeometry.geometry);
+  //     feature.unset('modifyGeometry', true);
+  //   }
+  // });
+});
+//todo: modify ribs: rotate
+
+
+
 const geometryFunctionFmsLane = function(coordinates, geometry) {
   let currentIx = coordinates.length-1;
   // console.log('currentIx', currentIx)
@@ -214,18 +334,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
   }
   const geometries = geometry.getGeometries();
 
-  // const parser = new jsts.io.OL3Parser();
-  // parser.inject(
-  //   Point,
-  //   LineString,
-  //   LinearRing,
-  //   Polygon,
-  //   MultiPoint,
-  //   MultiLineString,
-  //   MultiPolygon
-  // );
   let lineString1 = new LineString(coordinates);
-  // lineString1 = lineString1.simplify(MaxLaneLengthMeters / MaxLanePoints )
   const centerLineCoords = lineString1.getCoordinates();
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
 
@@ -254,7 +363,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
           [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
         ]);
     leftRib.rotate(Math.PI / 2.0, prevCoord);
-    geometries[RibsIx].appendLineString(leftRib);
 
     let rightRib = new LineString(
       [
@@ -262,7 +370,15 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
         [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
       ]);
     rightRib.rotate(-Math.PI / 2.0, prevCoord);
-    geometries[RibsIx].appendLineString(rightRib);
+
+    let ribLineString = new LineString(
+      [
+        leftRib.getCoordinates()[1],
+        prevCoord,
+        rightRib.getCoordinates()[1]
+      ]
+    )
+    geometries[RibsIx].appendLineString(ribLineString);
 
     let rib = [
       leftRib.getCoordinates()[1],
@@ -278,7 +394,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
           [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
         ]);
       lastLeftRib.rotate(Math.PI / 2.0, curCoord);
-      geometries[RibsIx].appendLineString(lastLeftRib);
+      // geometries[RibsIx].appendLineString(lastLeftRib);
 
       let lastRightRib = new LineString(
         [
@@ -286,7 +402,15 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
           [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
         ]);
       lastRightRib.rotate(-Math.PI / 2.0, curCoord);
-      geometries[RibsIx].appendLineString(lastRightRib);
+
+      let lastRibLineString = new LineString(
+        [
+          lastLeftRib.getCoordinates()[1],
+          curCoord,
+          lastRightRib.getCoordinates()[1],
+        ]
+      )
+      geometries[RibsIx].appendLineString(lastRibLineString);
 
       let rib = [
         lastLeftRib.getCoordinates()[1],
@@ -295,24 +419,11 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
       ]
       ribs.push(rib)
     }
-
-
   }
 
   const boundaryGeom = PtclJSON.getBoundary(ribs)
   geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
-
-  // console.log(geometries[RibsIx].getLineStrings())
-
-
-  // const jstsGeom = parser.read(lineString1);
-  // const PERPENDICULAR_TO_FEATURE = 2;
-  // const buffered = jstsGeom.buffer(HalfLaneWidthMeter, 6, PERPENDICULAR_TO_FEATURE);
-  // const bufferedGeom = parser.write(buffered);
-  // geometries[BoundaryIx].setCoordinates(bufferedGeom.getCoordinates());
   geometry.setGeometries(geometries);
-
-  // console.log(coordinates, geometry)
   return geometry;
 }
 
@@ -328,40 +439,9 @@ drawFmsLane.on('drawend', (e) => {
 drawFmsLane.on('drawstart', (e) => {
   console.log('drawstart', e);
 })
-// draw.on('drawend', function(e) {
-//   var lineString = e.feature.getGeometry();
-//   console.log('drawend', lineString)
-//
-//   var multiLineString = new MultiLineString([]);
-//   multiLineString.appendLineString(lineString);
-//   var size = lineString.getLength() / 20; // or use a fixed size if you prefer
-//   var coords = lineString.getCoordinates();
-//   // start
-//   var dx = coords[1][0] - coords[0][0];
-//   var dy = coords[1][1] - coords[0][1];
-//   var rotation = Math.atan2(dy, dx);
-//   var startLine = new LineString([
-//     [coords[0][0], coords[0][1] - size],
-//     [coords[0][0], coords[0][1] + size]
-//   ]);
-//   startLine.rotate(rotation, coords[0]);
-//   // end
-//   var lastIndex = coords.length - 1;
-//   var dx = coords[lastIndex - 1][0] - coords[lastIndex][0];
-//   var dy = coords[lastIndex - 1][1] - coords[lastIndex][1];
-//   var rotation = Math.atan2(dy, dx);
-//   var endLine = new LineString([
-//     [coords[lastIndex][0], coords[lastIndex][1] - size],
-//     [coords[lastIndex][0], coords[lastIndex][1] + size]
-//   ]);
-//   endLine.rotate(rotation, coords[lastIndex]);
-//   multiLineString.appendLineString(startLine);
-//   multiLineString.appendLineString(endLine);
-//   e.feature.setGeometry(multiLineString);
-// });
 
 const snap = new Snap({
-  source: ptclSourceSnap,
+  source: source,
 });
 
 map.addInteraction(drawFmsLane);
@@ -373,11 +453,13 @@ typeSelect.onchange = function () {
   if (value === 'Draw') {
     map.addInteraction(drawFmsLane);
     map.addInteraction(snap);
+    // map.addInteraction(modify);
+
   } else {
     map.removeInteraction(drawFmsLane);
     map.removeInteraction(snap);
 
-    map.addInteraction(select);
+    // map.addInteraction(select);
     map.addInteraction(modify);
   }
 
