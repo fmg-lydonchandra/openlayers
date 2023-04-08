@@ -230,6 +230,8 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
 
   geometries[RibsIx] = new MultiLineString([[]]);
+
+  const ribs = [];
   for (let i = 1; i < coordinates.length; i++) {
     const curCoord = coordinates[i]
     const prevCoord = coordinates[i-1]
@@ -240,13 +242,16 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
       continue;
     }
 
+    // normalize to 1 meter
     let directionNorm = Vector.normalize(direction)
+    // multiply to get half lane width
     let directionLaneWidth = Vector.mul(directionNorm, HalfLaneWidthMeter)
-    let leftRibVec = Vector.add(prev, directionLaneWidth);
+    // translate back to prevCoord
+    let prevCoordLaneWidthVec = Vector.add(prev, directionLaneWidth);
     let leftRib = new LineString(
         [
           prevCoord,
-          [leftRibVec.x, leftRibVec.y],
+          [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
         ]);
     leftRib.rotate(Math.PI / 2.0, prevCoord);
     geometries[RibsIx].appendLineString(leftRib);
@@ -254,11 +259,51 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
     let rightRib = new LineString(
       [
         prevCoord,
-        [leftRibVec.x, leftRibVec.y],
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
       ]);
     rightRib.rotate(-Math.PI / 2.0, prevCoord);
     geometries[RibsIx].appendLineString(rightRib);
+
+    let rib = [
+      leftRib.getCoordinates()[1],
+      prevCoord,
+      rightRib.getCoordinates()[1]
+    ]
+    ribs.push(rib)
+    if (i === coordinates.length - 1) {
+      let curCoordLaneWidthVec = Vector.add(cur, directionLaneWidth);
+      let lastLeftRib = new LineString(
+        [
+          curCoord,
+          [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
+        ]);
+      lastLeftRib.rotate(Math.PI / 2.0, curCoord);
+      geometries[RibsIx].appendLineString(lastLeftRib);
+
+      let lastRightRib = new LineString(
+        [
+          curCoord,
+          [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
+        ]);
+      lastRightRib.rotate(-Math.PI / 2.0, curCoord);
+      geometries[RibsIx].appendLineString(lastRightRib);
+
+      let rib = [
+        lastLeftRib.getCoordinates()[1],
+        curCoord,
+        lastRightRib.getCoordinates()[1]
+      ]
+      ribs.push(rib)
+    }
+
+
   }
+
+  const boundaryGeom = PtclJSON.getBoundary(ribs)
+  geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
+
+  // console.log(geometries[RibsIx].getLineStrings())
+
 
   // const jstsGeom = parser.read(lineString1);
   // const PERPENDICULAR_TO_FEATURE = 2;

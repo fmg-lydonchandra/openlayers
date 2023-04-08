@@ -59,7 +59,7 @@ class PtclJSON extends JSONFeature {
         ribCoords.push(this.getCoordinates(pathSecElem, this.mgrsSquare))
         centreLines.push(centerPoint);
       }
-      let boundaryGeom = this.getBoundary(ribCoords);
+      let boundaryGeom = PtclJSON.getBoundary(ribCoords);
       // console.log("boundaryGeom", boundaryGeom)
       const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
@@ -74,7 +74,7 @@ class PtclJSON extends JSONFeature {
     return features;
   }
 
-  getBoundary(ribCoords) {
+  static getBoundary(ribCoords) {
     // console.log('ribCoords', ribCoords)
     const boundaryCoords = [];
     if(ribCoords < 2) {
