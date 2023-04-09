@@ -57,7 +57,7 @@ const style = new Style({
     color: 'rgba(255, 255, 255, 0.6)',
   }),
   stroke: new Stroke({
-    color: 'red',
+    color: 'blue',
     width: 6,
   }),
 });
@@ -222,10 +222,13 @@ const map = new Map({
 });
 
 var firstLoad = false;
+
 map.on('loadend', function () {
   console.log('loadend')
   if (!firstLoad) {
-    map.getView().fit(vectorPtcl.values_.source.getFeatures()[0].getGeometry().getExtent());
+    const feature = vectorPtcl.values_.source.getFeatures()[0];
+    console.log('feature', feature)
+    map.getView().fit(feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx].getExtent());
     firstLoad = true;
   }
 });
@@ -330,9 +333,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     geometry.getGeometries()[RibsIx].appendLineString(new LineString([]));
     return geometry;
   }
-  const ribsObj = { id: currentIx, pathSections: [] }
-  geometry.set('ribs', ribsObj);
-
   if(currentIx === 0) {
     return geometry;
   }
@@ -345,6 +345,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   geometries[RibsIx] = new MultiLineString([[]]);
 
   const ribs = [];
+  const pathSections = [];
   for (let i = 1; i < coordinates.length; i++) {
     const curCoord = coordinates[i]
     const prevCoord = coordinates[i-1]
@@ -354,7 +355,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     if (direction.mag() === 0) {
       continue;
     }
-
 
     // normalize to 1 meter
     let directionNorm = p5.Vector.normalize(direction)
@@ -391,27 +391,23 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     let v2 = new p5.Vector(last[0], last[1]);
     let dirVec = p5.Vector.sub(v2, v1)
     let rotationFromNorth = dirVec.heading()
-    let rotationFromNorthDegrees = toDegrees(dirVec.heading())
-    let rotationFromEast;
+    let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
 
-    if (rotationFromNorthDegrees > -90 && rotationFromNorthDegrees <= 90) {
-      rotationFromEast = rotationFromNorth + Math.PI / 2
-    }
-    else if (rotationFromNorthDegrees > 90 && rotationFromNorthDegrees <= 180) {
-      rotationFromEast = -(Math.PI - (rotationFromNorth - Math.PI/2))
-    }
-    else {
-      rotationFromEast = rotationFromNorth + Math.PI / 2
-    }
-
-    let rotationFromEastDegree = toDegrees(rotationFromEast)
-
-    let psElement = {
-      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+    let pathSectionElement = {
+      referencePoint: { x: prevCoord[0], y: prevCoord[1], projection: 'EPSG:3857' },
       referenceHeading: rotationFromEast,
-      referenceHeadingDegree: rotationFromEastDegree
+      referenceHeadingUnit: 'rad',
+      leftEdge: {
+        distanceFromReferencePoint: HalfLaneWidthMeter,
+        unit: 'meter'
+      },
+      rightEdge: {
+        distanceFromReferencePoint: HalfLaneWidthMeter,
+        unit: 'meter'
+      }
     }
-    console.log(rotationFromEast, psElement)
+    pathSections.push(pathSectionElement);
+    console.log(rotationFromEast, pathSectionElement)
 
     let rib = [
       leftRib.getCoordinates()[1],
@@ -419,15 +415,15 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
       rightRib.getCoordinates()[1]
     ]
     ribs.push(rib)
+
     if (i === coordinates.length - 1) {
-      let curCoordLaneWidthVec = Vector.add(cur, directionLaneWidth);
+      let curCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
       let lastLeftRib = new LineString(
         [
           curCoord,
           [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
         ]);
       lastLeftRib.rotate(Math.PI / 2.0, curCoord);
-      // geometries[RibsIx].appendLineString(lastLeftRib);
 
       let lastRightRib = new LineString(
         [
@@ -451,8 +447,24 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
         lastRightRib.getCoordinates()[1]
       ]
       ribs.push(rib)
+
+      let lastPathSectionElement = {
+        referencePoint: { x: curCoord[0], y: curCoord[1], projection: 'EPSG:3857' },
+        referenceHeading: rotationFromEast,
+        referenceHeadingUnit: 'rad',
+        leftEdge: {
+          distanceFromReferencePoint: HalfLaneWidthMeter,
+          unit: 'meter'
+        },
+        rightEdge: {
+          distanceFromReferencePoint: HalfLaneWidthMeter,
+          unit: 'meter'
+        }
+      }
+      pathSections.push(lastPathSectionElement);
     }
   }
+  geometry.set('pathSections', pathSections);
 
   const boundaryGeom = PtclJSON.getBoundary(ribs)
   geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
@@ -495,5 +507,20 @@ typeSelect.onchange = function () {
     // map.addInteraction(select);
     map.addInteraction(modify);
   }
-
 };
+
+const toRotationFromEastRad = (rotationFromNorthRad) => {
+  let rotationFromNorthDegrees = toDegrees(rotationFromNorthRad)
+  let toRotationFromEastRad;
+
+  if (rotationFromNorthDegrees > -90 && rotationFromNorthDegrees <= 90) {
+    toRotationFromEastRad = rotationFromNorthRad + Math.PI / 2
+  }
+  else if (rotationFromNorthDegrees > 90 && rotationFromNorthDegrees <= 180) {
+    toRotationFromEastRad = rotationFromNorthRad - Math.PI*3/2
+  }
+  else {
+    toRotationFromEastRad = rotationFromNorthRad + Math.PI / 2
+  }
+  return toRotationFromEastRad
+}

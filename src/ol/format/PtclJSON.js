@@ -3,7 +3,7 @@
 import JSONFeature from './JSONFeature.js';
 import {get as getProjection} from '../proj.js';
 import Feature from '../Feature.js';
-import {LineString} from '../geom.js';
+import {GeometryCollection, LineString, MultiLineString} from '../geom.js';
 import Mgrs from '../../../public/mgrs.js';
 import Polygon from '../geom/Polygon.js';
 
@@ -21,6 +21,10 @@ class PtclJSON extends JSONFeature {
       throw new Error("mgrsSquare is not set");
     }
   }
+
+  static BoundaryIx = 0;
+  static RibsIx = 1;
+  static CenterLineIx = 2;
 
   readFeatureFromObject(object, options) {
     return undefined;
@@ -40,11 +44,14 @@ class PtclJSON extends JSONFeature {
     //   column: 'M',
     //   row: 'K',
     // }
-
     for (let i = 0, ii = object.AreaMapDePtr.pathSections.length; i < ii; i++) {
-    // for (let i = 0, ii = 1; i < ii; i++) {
       const pathSec = object.AreaMapDePtr.pathSections[i];
       const feature = new Feature();
+      const geometry = new GeometryCollection([
+        new Polygon([]), // boundary
+        new MultiLineString([[]]),
+        new LineString([])
+      ]);
       let centreLines = [];
       let ribCoords = [];
       // console.log('pathSec.numElements',pathSec.numElements)
@@ -60,14 +67,20 @@ class PtclJSON extends JSONFeature {
         centreLines.push(centerPoint);
       }
       let boundaryGeom = PtclJSON.getBoundary(ribCoords);
-      // console.log("boundaryGeom", boundaryGeom)
       const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
+      const geometries = geometry.getGeometries();
+      geometries[PtclJSON.BoundaryIx] = boundaryTransformed;
       let centreLineGeom = new LineString(centreLines);
-      const transformed = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
+      const centreLineTransformed = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
+      geometries[PtclJSON.CenterLineIx] = centreLineTransformed;
       feature.setId("ptcl_" + pathSec.id);
+      geometry.setGeometries(geometries)
       // feature.setGeometry(transformed);
-      feature.setGeometry(boundaryTransformed);
+      // feature.setGeometry(boundaryTransformed);
+      feature.setGeometry(geometry);
+      console.log("feature", feature.getGeometry())
+
       features.push(feature);
     }
     // console.log(features)
@@ -105,8 +118,6 @@ class PtclJSON extends JSONFeature {
     }
     return new Polygon([ boundaryCoords ]);
   }
-
-  static roundAwayFromZero = v => v < 0 ? Math.ceil(v - .5) : Math.floor(+v + .5);
 
   getCoordinates(rib, mgrsSquare)
   {
