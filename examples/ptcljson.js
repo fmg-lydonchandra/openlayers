@@ -32,6 +32,7 @@ import {getDistance} from '../src/ol/sphere.js';
 import {circular} from '../src/ol/geom/Polygon.js';
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
 import {never} from '../src/ol/events/condition.js';
+import {toDegrees} from '../src/ol/math.js';
 
 const key = 'get_your_own_D6rA4zTHduk6KOKTXzGB';
 const attributions =
@@ -266,7 +267,7 @@ const modify = new Modify({
   // style: modifyStyle
   style: function (feature) {
     feature.get('features').forEach(function (modifyFeature) {
-      console.log('modifyFeature', modifyFeature)
+      // console.log('modifyFeature', modifyFeature)
       const modifyGeometry = modifyFeature.get('modifyGeometry');
       if (modifyGeometry) {
 
@@ -276,10 +277,10 @@ const modify = new Modify({
           modifyGeometry.ribs = modifyRibs
         }
 
-        console.log('modifyGeometry',
-          modifyGeometry.geometry.getGeometries()[RibsIx].getLineStrings().map(line => line.getFlatCoordinates()))
-
-        console.log('modifyGeometry.ribs', modifyGeometry.ribs.getLineStrings().map(line => line.getFlatCoordinates()))
+        // console.log('modifyGeometry',
+        //   modifyGeometry.geometry.getGeometries()[RibsIx].getLineStrings().map(line => line.getFlatCoordinates()))
+        //
+        // console.log('modifyGeometry.ribs', modifyGeometry.ribs.getLineStrings().map(line => line.getFlatCoordinates()))
       }
     })
     // const laneGeomCol = feature.get('features')[0]
@@ -314,9 +315,10 @@ modify.on('modifyend', function (event) {
 });
 //todo: modify ribs: rotate
 
+let lanes = []
 
-
-const geometryFunctionFmsLane = function(coordinates, geometry) {
+const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
+  // console.log(coordinates, geometry)
   let currentIx = coordinates.length-1;
   // console.log('currentIx', currentIx)
   if (!geometry) {
@@ -328,6 +330,8 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
     geometry.getGeometries()[RibsIx].appendLineString(new LineString([]));
     return geometry;
   }
+  const ribsObj = { id: currentIx, pathSections: [] }
+  geometry.set('ribs', ribsObj);
 
   if(currentIx === 0) {
     return geometry;
@@ -350,6 +354,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
     if (Vector.len(direction) === 0) {
       continue;
     }
+
 
     // normalize to 1 meter
     let directionNorm = Vector.normalize(direction)
@@ -379,6 +384,21 @@ const geometryFunctionFmsLane = function(coordinates, geometry) {
       ]
     )
     geometries[RibsIx].appendLineString(ribLineString);
+    let first = ribLineString.getCoordinates()[0];
+    let last = ribLineString.getCoordinates()[2];
+
+    let v1 = new p5.Vector(first[0], first[1]);
+    let v2 = new p5.Vector(last[0], last[1]);
+    v2.sub(v1)
+    let rotation = v2.heading()
+    let rotationDegree = toDegrees(rotation)
+
+    let psElement = {
+      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+      referenceHeading: rotation,
+      referenceHeadingDegree: rotationDegree
+    }
+    console.log(rotation, psElement)
 
     let rib = [
       leftRib.getCoordinates()[1],
