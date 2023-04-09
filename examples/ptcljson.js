@@ -348,20 +348,20 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   for (let i = 1; i < coordinates.length; i++) {
     const curCoord = coordinates[i]
     const prevCoord = coordinates[i-1]
-    let prev = new Vector(prevCoord[0], prevCoord[1]);
-    let cur = new Vector(curCoord[0], curCoord[1])
-    let direction = Vector.sub(cur, prev)
-    if (Vector.len(direction) === 0) {
+    let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
+    let cur = new p5.Vector(curCoord[0], curCoord[1])
+    let direction = p5.Vector.sub(cur, prev)
+    if (direction.mag() === 0) {
       continue;
     }
 
 
     // normalize to 1 meter
-    let directionNorm = Vector.normalize(direction)
+    let directionNorm = p5.Vector.normalize(direction)
     // multiply to get half lane width
-    let directionLaneWidth = Vector.mul(directionNorm, HalfLaneWidthMeter)
+    let directionLaneWidth = p5.Vector.mult(directionNorm, HalfLaneWidthMeter)
     // translate back to prevCoord
-    let prevCoordLaneWidthVec = Vector.add(prev, directionLaneWidth);
+    let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
     let leftRib = new LineString(
         [
           prevCoord,
@@ -389,16 +389,29 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
 
     let v1 = new p5.Vector(first[0], first[1]);
     let v2 = new p5.Vector(last[0], last[1]);
-    v2.sub(v1)
-    let rotation = v2.heading()
-    let rotationDegree = toDegrees(rotation)
+    let dirVec = p5.Vector.sub(v2, v1)
+    let rotationFromNorth = dirVec.heading()
+    let rotationFromNorthDegrees = toDegrees(dirVec.heading())
+    let rotationFromEast;
+
+    if (rotationFromNorthDegrees > -90 && rotationFromNorthDegrees <= 90) {
+      rotationFromEast = rotationFromNorth + Math.PI / 2
+    }
+    else if (rotationFromNorthDegrees > 90 && rotationFromNorthDegrees <= 180) {
+      rotationFromEast = -(Math.PI - (rotationFromNorth - Math.PI/2))
+    }
+    else {
+      rotationFromEast = rotationFromNorth + Math.PI / 2
+    }
+
+    let rotationFromEastDegree = toDegrees(rotationFromEast)
 
     let psElement = {
       referencePoint: { x: prevCoord[0], y: prevCoord[1] },
-      referenceHeading: rotation,
-      referenceHeadingDegree: rotationDegree
+      referenceHeading: rotationFromEast,
+      referenceHeadingDegree: rotationFromEastDegree
     }
-    console.log(rotation, psElement)
+    console.log(rotationFromEast, psElement)
 
     let rib = [
       leftRib.getCoordinates()[1],
