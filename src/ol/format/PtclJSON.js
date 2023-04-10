@@ -1,7 +1,7 @@
 /* eslint-disable */
 
 import JSONFeature from './JSONFeature.js';
-import {get as getProjection} from '../proj.js';
+import {get as getProjection, Projection} from '../proj.js';
 import Feature from '../Feature.js';
 import {GeometryCollection, LineString, MultiLineString} from '../geom.js';
 import Mgrs from '../../../public/mgrs.js';
@@ -62,24 +62,24 @@ class PtclJSON extends JSONFeature {
         ];
         const mgrsInst = new Mgrs();
         const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, this.mgrsSquare);
-        ribCoords.push(this.getCoordinates(pathSecElem, this.mgrsSquare))
+        ribCoords.push(this.calcRibsCoordsFromMgrs(pathSecElem, this.mgrsSquare))
         centreLines.push(centerPoint);
       }
       const geometries = geometry.getGeometries();
 
-      let ribsGeom = PtclJSON.getRibsGeom(ribCoords);
+      let ribsGeom = PtclJSON.ribsToMultiLineString(ribCoords);
       const ribsGeomTransformed = ribsGeom.transform('EPSG:28350', 'EPSG:3857');
       console.log('ribsGeom', ribsGeomTransformed)
       geometries[PtclJSON.RibsIx] = ribsGeomTransformed;
 
       let boundaryGeom = PtclJSON.getBoundaryGeom(ribCoords);
       const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
-
-
       geometries[PtclJSON.BoundaryIx] = boundaryTransformed;
+
       let centreLineGeom = new LineString(centreLines);
       const centreLineTransformed = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
       geometries[PtclJSON.CenterLineIx] = centreLineTransformed;
+
       feature.setId("ptcl_" + pathSec.id);
       geometry.setGeometries(geometries)
       feature.setGeometry(geometry);
@@ -91,61 +91,26 @@ class PtclJSON extends JSONFeature {
     return features;
   }
 
-  static getRibsGeom(ribsCoords) {
+  static ribToLineString(ribCoords) {
+    const LeftIx = 0;
+    const CenterIx = 1;
+    const RightIx = 2;
+
+    return new LineString(
+      [
+        ribCoords[LeftIx],
+        ribCoords[CenterIx],
+        ribCoords[RightIx],
+      ]
+    )
+  }
+  static ribsToMultiLineString(ribsCoords) {
     const returnMultiLineString = new MultiLineString([[]])
     if (ribsCoords.length < 2) {
       return returnMultiLineString;
     }
-    const LeftIx = 0;
-    const CenterIx = 1;
-    const RightIx = 2;
-    const HalfLaneWidthMeter = 10;
+    ribsCoords.forEach(ribCoords => returnMultiLineString.appendLineString(PtclJSON.ribToLineString(ribCoords)))
 
-
-    console.log('ribCoords', ribsCoords)
-    for (let i = 1; i < ribsCoords.length; i++) {
-      const curRib = ribsCoords[i]
-      const prevRib = ribsCoords[i-1]
-
-      const curRibCenter = curRib[CenterIx]
-      const prevRibCenter = prevRib[CenterIx]
-
-      //todo: include p5
-      let prev = new p5.Vector(prevRibCenter[0], prevRibCenter[1]);
-      let cur = new p5.Vector(curRibCenter[0], curRibCenter[1])
-      let direction = p5.Vector.sub(cur, prev)
-      if (direction.mag() === 0) {
-        continue;
-      }
-      // normalize to 1 meter
-      let directionNorm = p5.Vector.normalize(direction)
-      // multiply to get half lane width
-      let directionLaneWidth = p5.Vector.mult(directionNorm, HalfLaneWidthMeter)
-      // translate back to prevCoord
-      let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
-      let leftRib = new LineString(
-        [
-          prevRibCenter,
-          [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-        ]);
-      leftRib.rotate(Math.PI / 2.0, prevRibCenter);
-
-      let rightRib = new LineString(
-        [
-          prevRibCenter,
-          [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-        ]);
-      rightRib.rotate(-Math.PI / 2.0, prevRibCenter);
-
-      let ribLineString = new LineString(
-        [
-          leftRib.getCoordinates()[1],
-          prevRibCenter,
-          rightRib.getCoordinates()[1]
-        ]
-      )
-      returnMultiLineString.appendLineString(ribLineString);
-    }
     return returnMultiLineString;
   }
 
@@ -181,24 +146,30 @@ class PtclJSON extends JSONFeature {
     return new Polygon([ boundaryCoords ]);
   }
 
-  getCoordinates(rib, mgrsSquare)
+  /**
+   * Use for PTCL json import, using MGRS transformation to UTM zone 50 / X
+   * @param pathSectionElem
+   * @param mgrsSquare
+   * @returns {*[]}
+   */
+  calcRibsCoordsFromMgrs(pathSectionElem, mgrsSquare)
   {
     const mgrsInst = new Mgrs();
 
     // TO DO: implement using NetTopologySuite
-    const angle = (rib.referenceHeading / 10000) + (Math.PI / 2);
+    const angle = (pathSectionElem.referenceHeading / 10000) + (Math.PI / 2);
     // 90 degrees to direction
     const left = [
-      rib.referencePoint.x / 1000 + (rib.leftEdge.distanceFromReferencePoint / 1000 * Math.cos(angle)),
-      rib.referencePoint.y / 1000 + (rib.leftEdge.distanceFromReferencePoint / 1000 * Math.sin(angle))
+      pathSectionElem.referencePoint.x / 1000 + (pathSectionElem.leftEdge.distanceFromReferencePoint / 1000 * Math.cos(angle)),
+      pathSectionElem.referencePoint.y / 1000 + (pathSectionElem.leftEdge.distanceFromReferencePoint / 1000 * Math.sin(angle))
     ];
     const center = [
-      rib.referencePoint.x / 1000,
-      rib.referencePoint.y / 1000
+      pathSectionElem.referencePoint.x / 1000,
+      pathSectionElem.referencePoint.y / 1000
     ];
     const right = [
-      rib.referencePoint.x / 1000 - rib.rightEdge.distanceFromReferencePoint / 1000 * Math.cos(angle),
-      rib.referencePoint.y / 1000 - rib.rightEdge.distanceFromReferencePoint / 1000 * Math.sin(angle)
+      pathSectionElem.referencePoint.x / 1000 - pathSectionElem.rightEdge.distanceFromReferencePoint / 1000 * Math.cos(angle),
+      pathSectionElem.referencePoint.y / 1000 - pathSectionElem.rightEdge.distanceFromReferencePoint / 1000 * Math.sin(angle)
     ];
 
     return [
@@ -206,6 +177,25 @@ class PtclJSON extends JSONFeature {
       mgrsInst.mgrs_to_utm(center, mgrsSquare),
       mgrsInst.mgrs_to_utm(right, mgrsSquare)
     ];
+  }
+
+  static calcRibsCoordsInMapProjection(pathSectionElem) {
+    const angle = (pathSectionElem.referenceHeading) + (Math.PI / 2);
+
+    // 90 degrees to direction
+    const left = [
+      pathSectionElem.referencePoint.x + (pathSectionElem.leftEdge.distanceFromReferencePoint * Math.cos(angle)),
+      pathSectionElem.referencePoint.y + (pathSectionElem.leftEdge.distanceFromReferencePoint * Math.sin(angle))
+    ];
+    const center = [
+      pathSectionElem.referencePoint.x,
+      pathSectionElem.referencePoint.y
+    ];
+    const right = [
+      pathSectionElem.referencePoint.x - pathSectionElem.rightEdge.distanceFromReferencePoint * Math.cos(angle),
+      pathSectionElem.referencePoint.y - pathSectionElem.rightEdge.distanceFromReferencePoint * Math.sin(angle)
+    ];
+    return [left, center, right]
   }
 
   readGeometryFromObject(object, options) {

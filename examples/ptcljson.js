@@ -217,7 +217,9 @@ map.on('loadend', function () {
   if (!firstLoad) {
     const feature = vectorPtcl.values_.source.getFeatures()[0];
     console.log('feature', feature)
-    map.getView().fit(feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx].getExtent());
+    const mapView = map.getView()
+    mapView.fit(feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx].getExtent());
+    mapView.setZoom(mapView.getZoom() - 2)
     firstLoad = true;
   }
 });
@@ -307,8 +309,6 @@ modify.on('modifyend', function (event) {
 });
 //todo: modify ribs: rotate
 
-let lanes = []
-
 const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   // console.log(coordinates, geometry)
   let currentIx = coordinates.length-1;
@@ -330,11 +330,9 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   let lineString1 = new LineString(coordinates);
   const centerLineCoords = lineString1.getCoordinates();
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
-
   geometries[RibsIx] = new MultiLineString([[]]);
 
-  const ribs = [];
-  const pathSections = [];
+  const pathSectionElems = [];
   for (let i = 1; i < coordinates.length; i++) {
     const curCoord = coordinates[i]
     const prevCoord = coordinates[i-1]
@@ -372,7 +370,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
         rightRib.getCoordinates()[1]
       ]
     )
-    geometries[RibsIx].appendLineString(ribLineString);
     let first = ribLineString.getCoordinates()[0];
     let last = ribLineString.getCoordinates()[2];
 
@@ -383,78 +380,44 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
 
     let pathSectionElement = {
-      referencePoint: { x: prevCoord[0], y: prevCoord[1], projection: 'EPSG:3857' },
+      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
       referenceHeading: rotationFromEast,
       referenceHeadingUnit: 'rad',
       leftEdge: {
         distanceFromReferencePoint: HalfLaneWidthMeter,
-        unit: 'meter'
       },
       rightEdge: {
         distanceFromReferencePoint: HalfLaneWidthMeter,
-        unit: 'meter'
       }
     }
-    pathSections.push(pathSectionElement);
-
-    let rib = [
-      leftRib.getCoordinates()[1],
-      prevCoord,
-      rightRib.getCoordinates()[1]
-    ]
-    ribs.push(rib)
+    pathSectionElems.push(pathSectionElement);
 
     if (i === coordinates.length - 1) {
-      let curCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
-      let lastLeftRib = new LineString(
-        [
-          curCoord,
-          [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
-        ]);
-      lastLeftRib.rotate(Math.PI / 2.0, curCoord);
-
-      let lastRightRib = new LineString(
-        [
-          curCoord,
-          [curCoordLaneWidthVec.x, curCoordLaneWidthVec.y],
-        ]);
-      lastRightRib.rotate(-Math.PI / 2.0, curCoord);
-
-      let lastRibLineString = new LineString(
-        [
-          lastLeftRib.getCoordinates()[1],
-          curCoord,
-          lastRightRib.getCoordinates()[1],
-        ]
-      )
-      geometries[RibsIx].appendLineString(lastRibLineString);
-
-      let rib = [
-        lastLeftRib.getCoordinates()[1],
-        curCoord,
-        lastRightRib.getCoordinates()[1]
-      ]
-      ribs.push(rib)
-
       let lastPathSectionElement = {
-        referencePoint: { x: curCoord[0], y: curCoord[1], projection: 'EPSG:3857' },
+        referencePoint: { x: curCoord[0], y: curCoord[1] },
         referenceHeading: rotationFromEast,
         referenceHeadingUnit: 'rad',
         leftEdge: {
           distanceFromReferencePoint: HalfLaneWidthMeter,
-          unit: 'meter'
         },
         rightEdge: {
           distanceFromReferencePoint: HalfLaneWidthMeter,
-          unit: 'meter'
         }
       }
-      pathSections.push(lastPathSectionElement);
+      pathSectionElems.push(lastPathSectionElement);
     }
   }
-  geometry.set('pathSections', pathSections);
+  const ribsCoords = []
+  geometry.set('pathSections', pathSectionElems);
+  for (let i = 0; i < pathSectionElems.length; i++) {
+    const pathSectionElem = pathSectionElems[i]
+    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+    ribsCoords.push(ribCoords)
+  }
+  const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
+  ribsGeom.getLineStrings().forEach(ls => geometries[RibsIx].appendLineString(ls))
 
-  const boundaryGeom = PtclJSON.getBoundaryGeom(ribs)
+  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
   geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
   geometry.setGeometries(geometries);
   return geometry;
