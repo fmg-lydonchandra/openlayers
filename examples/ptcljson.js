@@ -24,20 +24,9 @@ import {
   Point,
   Polygon
 } from '../src/ol/geom.js';
-import LinearRing from '../src/ol/geom/LinearRing.js';
-import multiLineString from '../build/ol/geom/MultiLineString.js';
-import GeoJSON from '../build/ol/format/GeoJSON.js';
-import {transform} from '../src/ol/proj.js';
-import {getDistance} from '../src/ol/sphere.js';
-import {circular} from '../src/ol/geom/Polygon.js';
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
 import {never} from '../src/ol/events/condition.js';
 import {toDegrees} from '../src/ol/math.js';
-
-const key = 'get_your_own_D6rA4zTHduk6KOKTXzGB';
-const attributions =
-  '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> ' +
-  '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>';
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
@@ -407,7 +396,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
       }
     }
     pathSections.push(pathSectionElement);
-    console.log(rotationFromEast, pathSectionElement)
 
     let rib = [
       leftRib.getCoordinates()[1],
@@ -466,7 +454,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   }
   geometry.set('pathSections', pathSections);
 
-  const boundaryGeom = PtclJSON.getBoundary(ribs)
+  const boundaryGeom = PtclJSON.getBoundaryGeom(ribs)
   geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
   geometry.setGeometries(geometries);
   return geometry;

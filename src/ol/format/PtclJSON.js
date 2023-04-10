@@ -54,7 +54,6 @@ class PtclJSON extends JSONFeature {
       ]);
       let centreLines = [];
       let ribCoords = [];
-      // console.log('pathSec.numElements',pathSec.numElements)
       for (let j = 0; j < pathSec.numElements; j++) {
         const pathSecElem = pathSec.elements[j];
         const centerPointMgrs = [
@@ -66,18 +65,23 @@ class PtclJSON extends JSONFeature {
         ribCoords.push(this.getCoordinates(pathSecElem, this.mgrsSquare))
         centreLines.push(centerPoint);
       }
-      let boundaryGeom = PtclJSON.getBoundary(ribCoords);
+      const geometries = geometry.getGeometries();
+
+      let ribsGeom = PtclJSON.getRibsGeom(ribCoords);
+      const ribsGeomTransformed = ribsGeom.transform('EPSG:28350', 'EPSG:3857');
+      console.log('ribsGeom', ribsGeomTransformed)
+      geometries[PtclJSON.RibsIx] = ribsGeomTransformed;
+
+      let boundaryGeom = PtclJSON.getBoundaryGeom(ribCoords);
       const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
-      const geometries = geometry.getGeometries();
+
       geometries[PtclJSON.BoundaryIx] = boundaryTransformed;
       let centreLineGeom = new LineString(centreLines);
       const centreLineTransformed = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
       geometries[PtclJSON.CenterLineIx] = centreLineTransformed;
       feature.setId("ptcl_" + pathSec.id);
       geometry.setGeometries(geometries)
-      // feature.setGeometry(transformed);
-      // feature.setGeometry(boundaryTransformed);
       feature.setGeometry(geometry);
       console.log("feature", feature.getGeometry())
 
@@ -87,7 +91,65 @@ class PtclJSON extends JSONFeature {
     return features;
   }
 
-  static getBoundary(ribCoords) {
+  static getRibsGeom(ribsCoords) {
+    const returnMultiLineString = new MultiLineString([[]])
+    if (ribsCoords.length < 2) {
+      return returnMultiLineString;
+    }
+    const LeftIx = 0;
+    const CenterIx = 1;
+    const RightIx = 2;
+    const HalfLaneWidthMeter = 10;
+
+
+    console.log('ribCoords', ribsCoords)
+    for (let i = 1; i < ribsCoords.length; i++) {
+      const curRib = ribsCoords[i]
+      const prevRib = ribsCoords[i-1]
+
+      const curRibCenter = curRib[CenterIx]
+      const prevRibCenter = prevRib[CenterIx]
+
+      //todo: include p5
+      let prev = new p5.Vector(prevRibCenter[0], prevRibCenter[1]);
+      let cur = new p5.Vector(curRibCenter[0], curRibCenter[1])
+      let direction = p5.Vector.sub(cur, prev)
+      if (direction.mag() === 0) {
+        continue;
+      }
+      // normalize to 1 meter
+      let directionNorm = p5.Vector.normalize(direction)
+      // multiply to get half lane width
+      let directionLaneWidth = p5.Vector.mult(directionNorm, HalfLaneWidthMeter)
+      // translate back to prevCoord
+      let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
+      let leftRib = new LineString(
+        [
+          prevRibCenter,
+          [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+        ]);
+      leftRib.rotate(Math.PI / 2.0, prevRibCenter);
+
+      let rightRib = new LineString(
+        [
+          prevRibCenter,
+          [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+        ]);
+      rightRib.rotate(-Math.PI / 2.0, prevRibCenter);
+
+      let ribLineString = new LineString(
+        [
+          leftRib.getCoordinates()[1],
+          prevRibCenter,
+          rightRib.getCoordinates()[1]
+        ]
+      )
+      returnMultiLineString.appendLineString(ribLineString);
+    }
+    return returnMultiLineString;
+  }
+
+  static getBoundaryGeom(ribCoords) {
     // console.log('ribCoords', ribCoords)
     const boundaryCoords = [];
     if(ribCoords < 2) {
