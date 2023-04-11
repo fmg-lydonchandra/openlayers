@@ -25,7 +25,7 @@ import {
   Polygon
 } from '../src/ol/geom.js';
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
-import {never} from '../src/ol/events/condition.js';
+import {never, platformModifierKeyOnly, primaryAction} from '../src/ol/events/condition.js';
 import {toDegrees} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 
@@ -109,82 +109,60 @@ function calculateCenter(geometry) {
   };
 }
 
-
-const source = new VectorSource();
-const vector = new VectorLayer({
-  source: source,
-  style: function (feature) {
-    const styles = [style];
-    const modifyGeometry = feature.get('modifyGeometry');
-    const geometry = modifyGeometry
-      ? modifyGeometry.geometry
-      : feature.getGeometry();
-
-    let ribs;
-    if (geometry.getType() === 'LineString') {
-      //todo: use different vectorSource layer to edit ribs and to display it, to make it simple
-      //vectorSourceGeomCol to display
-      //vectorSourceRibs to edit ribs
-      //have to link these 2, so after editing, will update boundary automatically
-      ribs = geometry;
-      const ribsLeftRightPoints = new MultiPoint(ribs.getCoordinates());
-
+const getStyle1 = function (feature) {
+  const styles = [style];
+  if (feature.getGeometry().getType() === 'GeometryCollection') {
+    return styles;
+  }
+  const modifyGeometry = feature.get('modifyGeometry');
+  const geometry = modifyGeometry
+    ? modifyGeometry.geometry
+    : feature.getGeometry();
+  const result = calculateCenter(geometry);
+  const center = result.center;
+  if (center) {
+    styles.push(
+      new Style({
+        geometry: new Point(center),
+        image: new CircleStyle({
+          radius: 4,
+          fill: new Fill({
+            color: '#ff3333',
+          }),
+        }),
+      })
+    );
+    const coordinates = result.coordinates;
+    if (coordinates) {
+      console.log('coordinates', coordinates)
       styles.push(
         new Style({
-          geometry: ribsLeftRightPoints,
+          geometry: new GeometryCollection([
+            new MultiPoint(coordinates),
+            new LineString(coordinates),
+          ]),
           image: new CircleStyle({
-            radius: 20,
+            radius: 4,
             fill: new Fill({
               color: '#33cc33',
             }),
-            stroke: new Stroke({
-              color: 'rgba(123, 0, 0, 0.7)',
-            }),
           }),
           stroke: new Stroke({
-            color: '#ffcc33',
-            width: 2,
+            color: 'blue',
+            width: 6,
           }),
         })
       );
     }
-    else if (geometry.getType() === 'MultiLineString') {
-      // ribs = geometry.getGeometries()[RibsIx]
-      // if (ribs.getLineStrings().length > 0) {
-      //   const coords = ribs.getLineStrings()
-      //     .filter(line => line.getCoordinates().length > 0)
-      //     .map(line => [line.getCoordinates()[0], line.getCoordinates()[2]])
-      //     .flat(1)
-      //   ;
-      //   const ribsLeftRightPoints = new MultiPoint(coords);
-      //   styles.push(
-      //     new Style({
-      //       geometry: ribsLeftRightPoints,
-      //       image: new CircleStyle({
-      //         radius: 20,
-      //         fill: new Fill({
-      //           color: '#33cc33',
-      //         }),
-      //         stroke: new Stroke({
-      //           color: 'rgba(123, 0, 0, 0.7)',
-      //         }),
-      //       }),
-      //       stroke: new Stroke({
-      //         color: '#ffcc33',
-      //         width: 2,
-      //       }),
-      //     })
-      //   );
-      // }
-    }
-    else if (geometry.getType() === 'GeometryCollection') {
-
-    }
-
-
-
-    return styles;
   }
+  return styles;
+}
+
+
+const source = new VectorSource();
+const vector = new VectorLayer({
+  source: source,
+  style: getStyle1
 });
 const ptclSource = new VectorSource({
   url: 'HazelmerePathSectionsOnlyPtcl.json',
@@ -260,9 +238,7 @@ map.on('loadend', function () {
   }
 });
 
-const select = new Select({
-
-});
+const select = new Select({});
 
 const modifyStyle = new Style({
   image: new CircleStyle({
@@ -293,54 +269,100 @@ const defaultStyle = new Modify({source: source})
   .getOverlay()
   .getStyleFunction();
 
-const modify = new Modify({
+let modify = new Modify({
   source: source,
   insertVertexCondition: never,
   // style: modifyStyle
   style: function (feature) {
-    // if (feature.get('modifyGeometry')) {
-      console.log('feature', feature.ol_uid, feature)
-    // }
-    // feature.get('features').forEach(function (modifyFeature) {
-    //   // console.log('modifyFeature', modifyFeature)
-    //   const modifyGeometry = modifyFeature.get('modifyGeometry');
-    //   if (modifyGeometry) {
-    //     modifyGeometry.geometry = modifyGeometry.geometry
-    //
-    //     console.log('modifyGeometry', modifyGeometry.geometry.getGeometries()[RibsIx].getLineStrings()[1].getCoordinates())
-    //   }
-    // })
-    return defaultStyle(feature)
   }
 });
-modify.on('modifystart', function (event) {
-  console.log('select.getFeatures()', select.getFeatures())
-  // console.log('modifystart', event.features)
-  event.features.forEach(function (feature) {
-    feature.set(
-      'modifyGeometry',
-      {geometry: feature.getGeometry()},
-      true
-    );
-  });
-});
+select.on('select', function (e) {
+  const selected = select.getFeatures()
+  console.log('on select', selected)
 
-modify.on('modifyend', function (event) {
-  console.log('modifyend', event)
-  event.features.forEach(function (feature) {
-    const modifyGeometry = feature.get('modifyGeometry');
-    if (modifyGeometry) {
-      // feature.setGeometry(modifyGeometry.geometry);
-      // feature.unset('modifyGeometry', true);
+  map.removeInteraction(modify)
+  modify = new Modify({
+    features: selected,
+    deleteCondition: never,
+    condition: function (event) {
+      return primaryAction(event) && !platformModifierKeyOnly(event);
+    },
+    // source: source,
+    insertVertexCondition: never,
+    style: function (feature) {
+      feature.get('features').forEach(function (modifyFeature) {
+        const modifyGeometry = modifyFeature.get('modifyGeometry');
+        if (feature.getGeometry().getType() !== 'GeometryCollection') {
+          if (modifyGeometry) {
+            const point = feature.getGeometry().getCoordinates();
+            let modifyPoint = modifyGeometry.point;
+            if (!modifyPoint) {
+              // save the initial geometry and vertex position
+              modifyPoint = point;
+              modifyGeometry.point = modifyPoint;
+              modifyGeometry.geometry0 = modifyGeometry.geometry;
+              // get anchor and minimum radius of vertices to be used
+              const result = calculateCenter(modifyGeometry.geometry0);
+              modifyGeometry.center = result.center;
+              modifyGeometry.minRadius = result.minRadius;
+            }
+
+            const center = modifyGeometry.center;
+            const minRadius = modifyGeometry.minRadius;
+            let dx, dy;
+            dx = modifyPoint[0] - center[0];
+            dy = modifyPoint[1] - center[1];
+            const initialRadius = Math.sqrt(dx * dx + dy * dy);
+            if (initialRadius > minRadius) {
+              const initialAngle = Math.atan2(dy, dx);
+              dx = point[0] - center[0];
+              dy = point[1] - center[1];
+              const currentRadius = Math.sqrt(dx * dx + dy * dy);
+              if (currentRadius > 0) {
+                const currentAngle = Math.atan2(dy, dx);
+                const geometry = modifyGeometry.geometry0.clone();
+                geometry.scale(1, undefined, center);
+                geometry.rotate(currentAngle - initialAngle, center);
+                modifyGeometry.geometry = geometry;
+              }
+            }
+          }
+        }
+
+      })
+
+      const styles = getStyle1(feature.get('features')[0]);
+      console.log('styles', styles)
+      return styles
+
     }
   });
-});
-//todo: modify ribs: rotate
+
+  modify.on('modifystart', function (event) {
+    event.features.forEach(function (feature) {
+      feature.set(
+        'modifyGeometry',
+        {geometry: feature.getGeometry().clone()},
+        true
+      );
+    });
+  });
+
+  modify.on('modifyend', function (event) {
+    event.features.forEach(function (feature) {
+      const modifyGeometry = feature.get('modifyGeometry');
+      if (modifyGeometry) {
+        feature.setGeometry(modifyGeometry.geometry);
+        feature.unset('modifyGeometry', true);
+      }
+    });
+  });
+  map.addInteraction(modify);
+})
+
 
 const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
-  // console.log(coordinates, geometry)
   let currentIx = coordinates.length-1;
-  // console.log('currentIx', currentIx)
   if (!geometry) {
     geometry = new GeometryCollection([
       new Polygon([]), // boundary
@@ -452,18 +474,13 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   return geometry;
 }
 
-const drawnFeatures = [];
 const drawFmsLane = new Draw({
   type: 'LineString',
   source: source,
-  features: drawnFeatures,
   geometryFunction: geometryFunctionFmsLane
 });
 
 drawFmsLane.on('drawend', (evt) => {
-  console.log('drawend', evt);
-  // console.log('drawnFeatures', drawnFeatures)
-
   const geomCol = evt.feature.getGeometry();
 
   if (geomCol.getType() !== 'GeometryCollection') {
@@ -472,15 +489,15 @@ drawFmsLane.on('drawend', (evt) => {
   const geometries = geomCol.getGeometries()
   const ribsGeom = geometries[PtclJSON.RibsIx]
   ribsGeom.getLineStrings().forEach(rib => {
-    if (rib.getCoordinates().length == 0) {
+    if (rib.getCoordinates().length === 0) {
       return;
     }
     console.log('rib', rib, rib.getCoordinates())
     const ribFeature = new Feature(rib);
     //todo: add property to link rib with pathSection..id etc
     const sourceLayer = evt.target.source_;
+    console.log('ribFeature', ribFeature)
     sourceLayer.addFeature(ribFeature);
-
   })
 });
 drawFmsLane.on('drawstart', (e) => {
@@ -500,6 +517,8 @@ typeSelect.onchange = function () {
   if (value === 'Draw') {
     map.addInteraction(drawFmsLane);
     map.addInteraction(snap);
+    map.removeInteraction(select);
+
     // map.addInteraction(modify);
 
   } else {
@@ -507,7 +526,7 @@ typeSelect.onchange = function () {
     map.removeInteraction(snap);
 
     map.addInteraction(select);
-    map.addInteraction(modify);
+    // map.addInteraction(modify);
   }
 };
 
