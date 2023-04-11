@@ -69,7 +69,6 @@ class PtclJSON extends JSONFeature {
 
       let ribsGeom = PtclJSON.ribsToMultiLineString(ribCoords);
       const ribsGeomTransformed = ribsGeom.transform('EPSG:28350', 'EPSG:3857');
-      console.log('ribsGeom', ribsGeomTransformed)
       geometries[PtclJSON.RibsIx] = ribsGeomTransformed;
 
       let boundaryGeom = PtclJSON.getBoundaryGeom(ribCoords);
@@ -83,11 +82,9 @@ class PtclJSON extends JSONFeature {
       feature.setId("ptcl_" + pathSec.id);
       geometry.setGeometries(geometries)
       feature.setGeometry(geometry);
-      console.log("feature", feature.getGeometry())
 
       features.push(feature);
     }
-    // console.log(features)
     return features;
   }
 

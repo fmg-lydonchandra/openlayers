@@ -27,6 +27,7 @@ import {
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
 import {never} from '../src/ol/events/condition.js';
 import {toDegrees} from '../src/ol/math.js';
+import Feature from '../src/ol/Feature.js';
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
@@ -119,14 +120,15 @@ const vector = new VectorLayer({
       ? modifyGeometry.geometry
       : feature.getGeometry();
 
-    const ribs = geometry.getGeometries()[RibsIx]
-    if (ribs.getLineStrings().length > 0) {
-      const coords = ribs.getLineStrings()
-        .filter(line => line.getCoordinates().length > 0)
-        .map(line => [line.getCoordinates()[0], line.getCoordinates()[2]])
-        .flat(1)
-      ;
-      const ribsLeftRightPoints = new MultiPoint(coords);
+    let ribs;
+    if (geometry.getType() === 'LineString') {
+      //todo: use different vectorSource layer to edit ribs and to display it, to make it simple
+      //vectorSourceGeomCol to display
+      //vectorSourceRibs to edit ribs
+      //have to link these 2, so after editing, will update boundary automatically
+      ribs = geometry;
+      const ribsLeftRightPoints = new MultiPoint(ribs.getCoordinates());
+
       styles.push(
         new Style({
           geometry: ribsLeftRightPoints,
@@ -146,6 +148,40 @@ const vector = new VectorLayer({
         })
       );
     }
+    else if (geometry.getType() === 'MultiLineString') {
+      // ribs = geometry.getGeometries()[RibsIx]
+      // if (ribs.getLineStrings().length > 0) {
+      //   const coords = ribs.getLineStrings()
+      //     .filter(line => line.getCoordinates().length > 0)
+      //     .map(line => [line.getCoordinates()[0], line.getCoordinates()[2]])
+      //     .flat(1)
+      //   ;
+      //   const ribsLeftRightPoints = new MultiPoint(coords);
+      //   styles.push(
+      //     new Style({
+      //       geometry: ribsLeftRightPoints,
+      //       image: new CircleStyle({
+      //         radius: 20,
+      //         fill: new Fill({
+      //           color: '#33cc33',
+      //         }),
+      //         stroke: new Stroke({
+      //           color: 'rgba(123, 0, 0, 0.7)',
+      //         }),
+      //       }),
+      //       stroke: new Stroke({
+      //         color: '#ffcc33',
+      //         width: 2,
+      //       }),
+      //     })
+      //   );
+      // }
+    }
+    else if (geometry.getType() === 'GeometryCollection') {
+
+    }
+
+
 
     return styles;
   }
@@ -224,7 +260,9 @@ map.on('loadend', function () {
   }
 });
 
-const select = new Select();
+const select = new Select({
+
+});
 
 const modifyStyle = new Style({
   image: new CircleStyle({
@@ -260,52 +298,42 @@ const modify = new Modify({
   insertVertexCondition: never,
   // style: modifyStyle
   style: function (feature) {
-    feature.get('features').forEach(function (modifyFeature) {
-      // console.log('modifyFeature', modifyFeature)
-      const modifyGeometry = modifyFeature.get('modifyGeometry');
-      if (modifyGeometry) {
-
-        let modifyRibs = modifyGeometry.ribs
-        if (!modifyRibs) {
-          modifyRibs = modifyGeometry.geometry.getGeometries()[RibsIx]
-          modifyGeometry.ribs = modifyRibs
-        }
-
-        // console.log('modifyGeometry',
-        //   modifyGeometry.geometry.getGeometries()[RibsIx].getLineStrings().map(line => line.getFlatCoordinates()))
-        //
-        // console.log('modifyGeometry.ribs', modifyGeometry.ribs.getLineStrings().map(line => line.getFlatCoordinates()))
-      }
-    })
-    // const laneGeomCol = feature.get('features')[0]
-    // const modifyGeometry = laneGeomCol.get('modifyGeometry');
-    // console.log(modifyGeometry)
-    // if (modifyGeometry) {
-    //   const point = modifyGeometry.geometry.getGeometries()[1].getCoordinates()
-    //   //let modifyPoint =
-    //
+    // if (feature.get('modifyGeometry')) {
+      console.log('feature', feature.ol_uid, feature)
     // }
+    // feature.get('features').forEach(function (modifyFeature) {
+    //   // console.log('modifyFeature', modifyFeature)
+    //   const modifyGeometry = modifyFeature.get('modifyGeometry');
+    //   if (modifyGeometry) {
+    //     modifyGeometry.geometry = modifyGeometry.geometry
+    //
+    //     console.log('modifyGeometry', modifyGeometry.geometry.getGeometries()[RibsIx].getLineStrings()[1].getCoordinates())
+    //   }
+    // })
     return defaultStyle(feature)
   }
 });
 modify.on('modifystart', function (event) {
+  console.log('select.getFeatures()', select.getFeatures())
+  // console.log('modifystart', event.features)
   event.features.forEach(function (feature) {
     feature.set(
       'modifyGeometry',
-      {geometry: feature.getGeometry().clone()},
+      {geometry: feature.getGeometry()},
       true
     );
   });
 });
 
 modify.on('modifyend', function (event) {
-  // event.features.forEach(function (feature) {
-  //   const modifyGeometry = feature.get('modifyGeometry');
-  //   if (modifyGeometry) {
-  //     feature.setGeometry(modifyGeometry.geometry);
-  //     feature.unset('modifyGeometry', true);
-  //   }
-  // });
+  console.log('modifyend', event)
+  event.features.forEach(function (feature) {
+    const modifyGeometry = feature.get('modifyGeometry');
+    if (modifyGeometry) {
+      // feature.setGeometry(modifyGeometry.geometry);
+      // feature.unset('modifyGeometry', true);
+    }
+  });
 });
 //todo: modify ribs: rotate
 
@@ -325,6 +353,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   if(currentIx === 0) {
     return geometry;
   }
+  // console.log('geometry', geometry)
   const geometries = geometry.getGeometries();
 
   let lineString1 = new LineString(coordinates);
@@ -423,14 +452,36 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   return geometry;
 }
 
+const drawnFeatures = [];
 const drawFmsLane = new Draw({
   type: 'LineString',
   source: source,
+  features: drawnFeatures,
   geometryFunction: geometryFunctionFmsLane
 });
 
-drawFmsLane.on('drawend', (e) => {
-  console.log('drawend', e);
+drawFmsLane.on('drawend', (evt) => {
+  console.log('drawend', evt);
+  // console.log('drawnFeatures', drawnFeatures)
+
+  const geomCol = evt.feature.getGeometry();
+
+  if (geomCol.getType() !== 'GeometryCollection') {
+    return;
+  }
+  const geometries = geomCol.getGeometries()
+  const ribsGeom = geometries[PtclJSON.RibsIx]
+  ribsGeom.getLineStrings().forEach(rib => {
+    if (rib.getCoordinates().length == 0) {
+      return;
+    }
+    console.log('rib', rib, rib.getCoordinates())
+    const ribFeature = new Feature(rib);
+    //todo: add property to link rib with pathSection..id etc
+    const sourceLayer = evt.target.source_;
+    sourceLayer.addFeature(ribFeature);
+
+  })
 });
 drawFmsLane.on('drawstart', (e) => {
   console.log('drawstart', e);
@@ -455,7 +506,7 @@ typeSelect.onchange = function () {
     map.removeInteraction(drawFmsLane);
     map.removeInteraction(snap);
 
-    // map.addInteraction(select);
+    map.addInteraction(select);
     map.addInteraction(modify);
   }
 };
