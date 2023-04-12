@@ -207,7 +207,7 @@ const ptclSource = new VectorSource({
     style: style,
     mgrsSquare: {
       utm_zone: 50,
-      lat_band: 'J',
+      lat_band: 'J',.
       column: 'M',
       row: 'K',
     }
