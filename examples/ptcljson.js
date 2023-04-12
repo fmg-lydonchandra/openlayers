@@ -177,12 +177,7 @@ const centerLineLayer = new VectorLayer({
 const ribsSource = new VectorSource();
 const ribsLayer = new VectorLayer({
   source: ribsSource,
-  style: new Style({
-    stroke: new Stroke({
-      color: 'green',
-      width: 4,
-    }),
-  })
+  style: getStyle1
 });
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
@@ -207,7 +202,7 @@ const ptclSource = new VectorSource({
     style: style,
     mgrsSquare: {
       utm_zone: 50,
-      lat_band: 'J',.
+      lat_band: 'J',
       column: 'M',
       row: 'K',
     }
@@ -288,30 +283,30 @@ let modify = new Modify({
   }
 });
 
-const createFeaturesToModify = (features, modifyType) => {
-  const featuresRetVal = []
-  switch(modifyType) {
-    case 'ribs': {
-      features.forEach(feat => {
-        const geometry = feat.getGeometry()
-        console.log(' createFeaturesToModify geometry', geometry)
-        if (geometry.getType() === 'GeometryCollection') {
-          const ribsLineStrings = geometry.getGeometries()[RibsIx].getLineStrings()
-          ribsLineStrings.forEach(ribLs => {
-            const ribsFeature = new Feature(ribLs)
-            featuresRetVal.push(ribsFeature)
-          })
-        }
-      });
-    }
-    break;
-    case 'centerLine': {
-
-    }
-    break;
-  }
-  return new Collection(featuresRetVal);
-}
+// const createFeaturesToModify = (features, modifyType) => {
+//   const featuresRetVal = []
+//   switch(modifyType) {
+//     case 'ribs': {
+//       features.forEach(feat => {
+//         const geometry = feat.getGeometry()
+//         console.log(' createFeaturesToModify geometry', geometry)
+//         if (geometry.getType() === 'GeometryCollection') {
+//           const ribsLineStrings = geometry.getGeometries()[RibsIx].getLineStrings()
+//           ribsLineStrings.forEach(ribLs => {
+//             const ribsFeature = new Feature(ribLs)
+//             featuresRetVal.push(ribsFeature)
+//           })
+//         }
+//       });
+//     }
+//     break;
+//     case 'centerLine': {
+//
+//     }
+//     break;
+//   }
+//   return new Collection(featuresRetVal);
+// }
 
 let snap = new Snap({
   source: source,
@@ -319,7 +314,14 @@ let snap = new Snap({
 
 select.on('select', function (e) {
   const selected = select.getFeatures()
-  const featuresToModify = createFeaturesToModify(selected, modifyType)
+  const featuresToModify = new Collection()
+  selected.forEach(feat => {
+    if(feat.get('fmsLaneType') === modifyType) {
+      featuresToModify.push(feat)
+    }
+  })
+  selected.clear();
+  //selected;// createFeaturesToModify(selected, modifyType)
   console.log('on select', selected)
 
   map.removeInteraction(snap)
@@ -529,6 +531,10 @@ drawFmsLane.on('drawstart', (evt) => {
   console.log('drawstart', evt, map.getFeaturesAtPixel(evt.target.downPx_));
 })
 
+/**
+ * Create new features on ribsLayer, centerLineLayer, BoundaryLayer
+ * and clear drawn features to avoid confusion
+ */
 drawFmsLane.on('drawend', (evt) => {
   console.log('drawend', evt)
   const geomCol = evt.feature.getGeometry();
@@ -537,6 +543,12 @@ drawFmsLane.on('drawend', (evt) => {
   console.log('drawend geomCol', geomCol, pathSection)
 
   const geometries = geomCol.getGeometries()
+
+  const boundaryGeom = geometries[PtclJSON.BoundaryIx]
+  const boundaryFeature = new Feature(boundaryGeom)
+  boundaryFeature.set('fmsLaneType', 'boundary')
+  boundarySource.addFeature(boundaryFeature)
+
   const ribsGeom = geometries[PtclJSON.RibsIx]
   ribsGeom.getLineStrings().forEach(rib => {
     if (rib.getCoordinates().length === 0) {
@@ -544,6 +556,7 @@ drawFmsLane.on('drawend', (evt) => {
     }
     console.log('rib', rib, rib.getCoordinates())
     const ribFeature = new Feature(rib);
+    ribFeature.set('fmsLaneType', 'ribs')
     console.log('ribFeature', ribFeature)
     ribsSource.addFeature(ribFeature);
   })
@@ -551,30 +564,14 @@ drawFmsLane.on('drawend', (evt) => {
   const centerLineGeom = geometries[PtclJSON.CenterLineIx]
   console.log('centerLineGeom', centerLineGeom)
   const centerLineFeature = new Feature(centerLineGeom)
+  centerLineFeature.set('fmsLaneType', 'centerLine')
   centerLineSource.addFeature(centerLineFeature)
 
-  const boundaryGeom = geometries[PtclJSON.BoundaryIx]
-  const boundaryFeature = new Feature(boundaryGeom)
-  boundarySource.addFeature(boundaryFeature)
-
-  const sourceLayer = evt.target.source_;
-  sourceLayer.removeFeature()
-  // if (geomCol.getType() !== 'GeometryCollection') {
-  //   return;
-  // }
-  // const geometries = geomCol.getGeometries()
-  // const ribsGeom = geometries[PtclJSON.RibsIx]
-  // ribsGeom.getLineStrings().forEach(rib => {
-  //   if (rib.getCoordinates().length === 0) {
-  //     return;
-  //   }
-  //   console.log('rib', rib, rib.getCoordinates())
-  //   const ribFeature = new Feature(rib);
-  //   //todo: add property to link rib with pathSection..id etc
-  //   const sourceLayer = evt.target.source_;
-  //   console.log('ribFeature', ribFeature)
-  //   sourceLayer.addFeature(ribFeature);
-  // })
+  const vecSource = evt.target.source_;
+  console.log('vecSource', vecSource)
+  setTimeout(() => {
+    vecSource.clear()
+  }, 0)
 });
 
 map.addInteraction(drawFmsLane);
