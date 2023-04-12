@@ -1,7 +1,7 @@
 /* eslint-disable */
 
 import JSONFeature from './JSONFeature.js';
-import {get as getProjection, Projection} from '../proj.js';
+import {get as getProjection} from '../proj.js';
 import Feature from '../Feature.js';
 import {GeometryCollection, LineString, MultiLineString} from '../geom.js';
 import Mgrs from '../../../public/mgrs.js';
@@ -68,16 +68,13 @@ class PtclJSON extends JSONFeature {
       const geometries = geometry.getGeometries();
 
       let ribsGeom = PtclJSON.ribsToMultiLineString(ribCoords);
-      const ribsGeomTransformed = ribsGeom.transform('EPSG:28350', 'EPSG:3857');
-      geometries[PtclJSON.RibsIx] = ribsGeomTransformed;
+      geometries[PtclJSON.RibsIx] = ribsGeom.transform('EPSG:28350', 'EPSG:3857');
 
       let boundaryGeom = PtclJSON.getBoundaryGeom(ribCoords);
-      const boundaryTransformed = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
-      geometries[PtclJSON.BoundaryIx] = boundaryTransformed;
+      geometries[PtclJSON.BoundaryIx] = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
       let centreLineGeom = new LineString(centreLines);
-      const centreLineTransformed = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
-      geometries[PtclJSON.CenterLineIx] = centreLineTransformed;
+      geometries[PtclJSON.CenterLineIx] = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
 
       feature.setId("ptcl_" + pathSec.id);
       geometry.setGeometries(geometries)
