@@ -164,6 +164,36 @@ const getStyle1 = function (feature) {
   return styles;
 }
 
+const centerLineSource = new VectorSource();
+const centerLineLayer = new VectorLayer({
+  source: centerLineSource,
+  style: new Style({
+    stroke: new Stroke({
+      color: 'red',
+      width: 4,
+    }),
+  })
+});
+const ribsSource = new VectorSource();
+const ribsLayer = new VectorLayer({
+  source: ribsSource,
+  style: new Style({
+    stroke: new Stroke({
+      color: 'green',
+      width: 4,
+    }),
+  })
+});
+const boundarySource = new VectorSource();
+const boundaryLayer = new VectorLayer({
+  source: boundarySource,
+  style: new Style({
+    stroke: new Stroke({
+      color: 'yellow',
+      width: 4,
+    }),
+  })
+})
 
 const source = new VectorSource();
 const vector = new VectorLayer({
@@ -189,26 +219,6 @@ const vectorPtcl = new VectorLayer({
   style: style,
 });
 
-const ptclSourceSnap = new VectorSource({
-  url: 'HazelmerePathSectionsOnlyPtcl.json',
-  format: new PtclJSON({
-    dataProjection: 'EPSG:28350',
-    style: style,
-    mgrsSquare: {
-      utm_zone: 50,
-      lat_band: 'J',
-      column: 'M',
-      row: 'K',
-    }
-  }),
-  overlaps: false,
-});
-
-const vectorPtclSnap = new VectorLayer({
-  source: ptclSourceSnap,
-  style: style,
-});
-
 const bing = new TileLayer({
   visible: true,
   preload: Infinity,
@@ -222,7 +232,7 @@ const bing = new TileLayer({
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, vectorPtclSnap, vector ],
+  layers: [ bing, vectorPtcl, vector, ribsLayer, centerLineLayer, boundaryLayer],
   target: 'map',
   view: new View({
     center: [0, 0],
@@ -284,6 +294,7 @@ const createFeaturesToModify = (features, modifyType) => {
     case 'ribs': {
       features.forEach(feat => {
         const geometry = feat.getGeometry()
+        console.log(' createFeaturesToModify geometry', geometry)
         if (geometry.getType() === 'GeometryCollection') {
           const ribsLineStrings = geometry.getGeometries()[RibsIx].getLineStrings()
           ribsLineStrings.forEach(ribLs => {
@@ -399,7 +410,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
       new MultiLineString([[]]),
       new LineString(coordinates)
     ]);
-    geometry.getGeometries()[RibsIx].appendLineString(new LineString([]));
     return geometry;
   }
   if(currentIx === 0) {
@@ -412,7 +422,10 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
   geometries[RibsIx] = new MultiLineString([[]]);
 
-  const pathSectionElems = [];
+  const pathSection = {
+    elements: []
+  }
+
   for (let i = 1; i < coordinates.length; i++) {
     const curCoord = coordinates[i]
     const prevCoord = coordinates[i-1]
@@ -470,7 +483,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
         distanceFromReferencePoint: HalfLaneWidthMeter,
       }
     }
-    pathSectionElems.push(pathSectionElement);
+    pathSection.elements.push(pathSectionElement);
 
     if (i === coordinates.length - 1) {
       let lastPathSectionElement = {
@@ -484,14 +497,13 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
           distanceFromReferencePoint: HalfLaneWidthMeter,
         }
       }
-      pathSectionElems.push(lastPathSectionElement);
+      pathSection.elements.push(lastPathSectionElement);
     }
   }
-  // console.log(pathSectionElems)
   const ribsCoords = []
-  geometry.set('pathSections', pathSectionElems);
-  for (let i = 0; i < pathSectionElems.length; i++) {
-    const pathSectionElem = pathSectionElems[i]
+  geometry.set('pathSection', pathSection);
+  for (let i = 0; i < pathSection.elements.length; i++) {
+    const pathSectionElem = pathSection.elements[i]
     const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
     ribsCoords.push(ribCoords)
   }
@@ -507,12 +519,46 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
 const drawFmsLane = new Draw({
   type: 'LineString',
   source: source,
-  geometryFunction: geometryFunctionFmsLane
+  geometryFunction: function (a, b) {
+    return geometryFunctionFmsLane(a, b)
+  }
 });
 
+drawFmsLane.on('drawstart', (evt) => {
+  evt.feature.set('fmsLaneId', uuidv4())
+  console.log('drawstart', evt, map.getFeaturesAtPixel(evt.target.downPx_));
+})
+
 drawFmsLane.on('drawend', (evt) => {
-  // const geomCol = evt.feature.getGeometry();
-  //
+  console.log('drawend', evt)
+  const geomCol = evt.feature.getGeometry();
+  const pathSection = geomCol.get('pathSection')
+  pathSection.id = evt.feature.get('fmsLaneId')
+  console.log('drawend geomCol', geomCol, pathSection)
+
+  const geometries = geomCol.getGeometries()
+  const ribsGeom = geometries[PtclJSON.RibsIx]
+  ribsGeom.getLineStrings().forEach(rib => {
+    if (rib.getCoordinates().length === 0) {
+      return;
+    }
+    console.log('rib', rib, rib.getCoordinates())
+    const ribFeature = new Feature(rib);
+    console.log('ribFeature', ribFeature)
+    ribsSource.addFeature(ribFeature);
+  })
+
+  const centerLineGeom = geometries[PtclJSON.CenterLineIx]
+  console.log('centerLineGeom', centerLineGeom)
+  const centerLineFeature = new Feature(centerLineGeom)
+  centerLineSource.addFeature(centerLineFeature)
+
+  const boundaryGeom = geometries[PtclJSON.BoundaryIx]
+  const boundaryFeature = new Feature(boundaryGeom)
+  boundarySource.addFeature(boundaryFeature)
+
+  const sourceLayer = evt.target.source_;
+  sourceLayer.removeFeature()
   // if (geomCol.getType() !== 'GeometryCollection') {
   //   return;
   // }
@@ -530,10 +576,6 @@ drawFmsLane.on('drawend', (evt) => {
   //   sourceLayer.addFeature(ribFeature);
   // })
 });
-drawFmsLane.on('drawstart', (e) => {
-  console.log('drawstart', e);
-})
-
 
 map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
