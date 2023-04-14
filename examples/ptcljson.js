@@ -30,8 +30,11 @@ import {never, platformModifierKeyOnly, primaryAction} from '../src/ol/events/co
 import {toDegrees} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
-import {Bezier} from '../public/bezierjs/bezier.js';
-import kinetic from '../src/ol/Kinetic.js';
+import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
+import booleanValid from '@turf/boolean-valid';
+import * as turf from '@turf/helpers';
+
+//todo: trace on survey data, left hand side ?
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
@@ -119,7 +122,22 @@ const getStyle1 = function (feature) {
   if(!feature) {
     return styles;
   }
+
   if (feature.getGeometry().getType() === 'GeometryCollection') {
+    const boundary = feature.getGeometry().getGeometries()[BoundaryIx];
+    const poly = boundary.getCoordinates();
+    const turfPoly = polygon(poly);
+    const kinks1 = kinks(turfPoly);
+    console.log(kinks1)
+    if (kinks1.features.length > 0) {
+      styles.push(new Style({
+        stroke: new Stroke({
+          color: 'red',
+          width: 2,
+        }),
+      }));
+    }
+
     return styles;
   }
   const modifyGeometry = feature.get('modifyGeometry');
@@ -184,41 +202,19 @@ const ribsLayer = new VectorLayer({
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
   source: boundarySource,
-  // style: new Style({
-  //   stroke: new Stroke({
-  //     color: 'yellow',
-  //     width: 4,
-  //   }),
-  // }),
   style: (feature, a, b) => {
-
-    var poly = feature.getGeometry().getCoordinates();
-    var kinkedPoly = turf.polygon(poly);
-    var unkinkedPoly = turf.unkinkPolygon(kinkedPoly);
-    console.log('unkinkedPoly', unkinkedPoly.features, kinkedPoly.features)
-    if (unkinkedPoly.features.length > 1) {
+    const poly = feature.getGeometry().getCoordinates();
+    const turfPoly = polygon(poly);
+    const kinks1 = kinks(turfPoly);
+    if (kinks1.features.length > 0) {
       return new Style({
         stroke: new Stroke({
           color: 'red',
           width: 2,
         }),
       })
-      // var coordinates = [];
-      // unkinkedPoly.features.forEach(function(feature) {
-      //   coordinates.push(feature.geometry.coordinates);
-      // });
-      // console.log(JSON.stringify(coordinates));
-      // feature.setGeometry(new MultiPolygon(coordinates));
     }
 
-    // const parser = new jsts.io.OL3Parser();
-    // parser.inject(
-    //   Polygon,
-    // );
-    // let boundaryPolygon = parser.read(feature.getGeometry())
-    // // boundaryPolygon = boundaryPolygon.buffer(0)
-    //
-    // console.log(feature, boundaryPolygon.isValid())
     return new Style({
       stroke: new Stroke({
         color: 'yellow',
@@ -349,6 +345,9 @@ let modify = new Modify({
 let snap = new Snap({
   source: source,
 });
+let ptclSnap = new Snap({
+  source: ptclSource,
+});
 
 select.on('select', function (e) {
   const selected = select.getFeatures()
@@ -363,6 +362,7 @@ select.on('select', function (e) {
   console.log('on select', selected)
 
   map.removeInteraction(snap)
+  map.removeInteraction(ptclSnap)
   map.removeInteraction(modify)
 
   modify = new Modify({
@@ -439,6 +439,7 @@ select.on('select', function (e) {
   });
   map.addInteraction(modify);
   map.addInteraction(snap)
+  map.addInteraction(ptclSnap)
 })
 
 
@@ -457,16 +458,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   }
   const geometries = geometry.getGeometries();
 
-  // const curveStartCoord = coordinates[0]
-  // const curveEndCoord = coordinates[currentIx]
-  // const bez = new Bezier(
-  //   curveStartCoord[0], curveStartCoord[1],
-  //   (curveStartCoord[0] + curveEndCoord[0])/2, (curveStartCoord[1] +  curveEndCoord[1])/2,
-  //   curveEndCoord[0], curveEndCoord[1]
-  // );
-  // const curved = bez.getLUT(16).map(item => [item.x, item.y]);
-  // console.log('curved', curved, coordinates)
-
   var line = {
     "type": "Feature",
     "properties": {},
@@ -477,12 +468,10 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   };
 
   // const curved = turf.bezier(line, {resolution: 4_000});
-  const curved = turf.bezier(line, {resolution: 4_000});
-
-  const coordsCurve = curved['geometry']['coordinates'];
-  console.log('coordsCurve', coordsCurve)
-  let lineString1 = new LineString(coordsCurve);
-  // let lineString1 = new LineString(coordinates);
+  // const curved = bezier(line, {resolution: 500});
+  // const coordsCurve = curved['geometry']['coordinates'];
+  // let lineString1 = new LineString(coordsCurve);
+  let lineString1 = new LineString(coordinates);
   const centerLineCoords = lineString1.getCoordinates();
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
   geometries[RibsIx] = new MultiLineString([[]]);
@@ -491,20 +480,19 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     elements: []
   }
 
-  for (let i = 1; i < coordsCurve.length; i++) {
-    const curCoord = coordsCurve[i]
-    const prevCoord = coordsCurve[i-1]
+  // for (let i = 1; i < coordsCurve.length; i++) {
+  //   const curCoord = coordsCurve[i]
+  //   const prevCoord = coordsCurve[i-1]
 
-  // for (let i = 1; i < coordinates.length; i++) {
-  //   const curCoord = coordinates[i]
-  //   const prevCoord = coordinates[i-1]
+  for (let i = 1; i < centerLineCoords.length; i++) {
+    const curCoord = centerLineCoords[i]
+    const prevCoord = centerLineCoords[i-1]
     let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
     let cur = new p5.Vector(curCoord[0], curCoord[1])
     let direction = p5.Vector.sub(cur, prev)
     if (direction.mag() === 0) {
       continue;
     }
-
 
     // normalize to 1 meter
     let directionNorm = p5.Vector.normalize(direction)
@@ -555,7 +543,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     }
     pathSection.elements.push(pathSectionElement);
 
-    if (i === coordinates.length - 1) {
+    if (i === centerLineCoords.length - 1) {
       let lastPathSectionElement = {
         referencePoint: { x: curCoord[0], y: curCoord[1] },
         referenceHeading: rotationFromEast,
@@ -581,15 +569,6 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   ribsGeom.getLineStrings().forEach(ls => geometries[RibsIx].appendLineString(ls))
 
   const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-  const parser = new jsts.io.OL3Parser();
-  parser.inject(
-    Polygon,
-    LineString
-  );
-
-  const boundaryJsts = parser.read(boundaryGeom)
-  console.log('boundaryJsts', boundaryGeom, boundaryJsts)
-
   geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
   geometry.setGeometries(geometries);
   return geometry;
@@ -600,7 +579,8 @@ const drawFmsLane = new Draw({
   source: source,
   geometryFunction: function (a, b) {
     return geometryFunctionFmsLane(a, b)
-  }
+  },
+  style: getStyle1
 });
 
 drawFmsLane.on('drawstart', (evt) => {
@@ -653,6 +633,7 @@ drawFmsLane.on('drawend', (evt) => {
 
 map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
+map.addInteraction(ptclSnap)
 
 const typeSelect = document.getElementById('type');
 typeSelect.onchange = function () {
