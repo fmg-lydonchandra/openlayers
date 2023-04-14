@@ -30,6 +30,8 @@ import {never, platformModifierKeyOnly, primaryAction} from '../src/ol/events/co
 import {toDegrees} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
+import {Bezier} from '../public/bezierjs/bezier.js';
+import kinetic from '../src/ol/Kinetic.js';
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
@@ -140,7 +142,7 @@ const getStyle1 = function (feature) {
     );
     const coordinates = result.coordinates;
     if (coordinates) {
-      console.log('coordinates', coordinates)
+      // console.log('coordinates', coordinates)
       styles.push(
         new Style({
           geometry: new GeometryCollection([
@@ -182,12 +184,48 @@ const ribsLayer = new VectorLayer({
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
   source: boundarySource,
-  style: new Style({
-    stroke: new Stroke({
-      color: 'yellow',
-      width: 4,
-    }),
-  })
+  // style: new Style({
+  //   stroke: new Stroke({
+  //     color: 'yellow',
+  //     width: 4,
+  //   }),
+  // }),
+  style: (feature, a, b) => {
+
+    var poly = feature.getGeometry().getCoordinates();
+    var kinkedPoly = turf.polygon(poly);
+    var unkinkedPoly = turf.unkinkPolygon(kinkedPoly);
+    console.log('unkinkedPoly', unkinkedPoly.features, kinkedPoly.features)
+    if (unkinkedPoly.features.length > 1) {
+      return new Style({
+        stroke: new Stroke({
+          color: 'red',
+          width: 2,
+        }),
+      })
+      // var coordinates = [];
+      // unkinkedPoly.features.forEach(function(feature) {
+      //   coordinates.push(feature.geometry.coordinates);
+      // });
+      // console.log(JSON.stringify(coordinates));
+      // feature.setGeometry(new MultiPolygon(coordinates));
+    }
+
+    // const parser = new jsts.io.OL3Parser();
+    // parser.inject(
+    //   Polygon,
+    // );
+    // let boundaryPolygon = parser.read(feature.getGeometry())
+    // // boundaryPolygon = boundaryPolygon.buffer(0)
+    //
+    // console.log(feature, boundaryPolygon.isValid())
+    return new Style({
+      stroke: new Stroke({
+        color: 'yellow',
+        width: 2,
+      }),
+    })
+  }
 })
 
 const source = new VectorSource();
@@ -238,7 +276,7 @@ const map = new Map({
 var firstLoad = false;
 
 map.on('loadend', function () {
-  console.log('loadend')
+  // console.log('loadend')
   if (!firstLoad) {
     const feature = vectorPtcl.values_.source.getFeatures()[0];
     console.log('feature', feature)
@@ -419,7 +457,32 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   }
   const geometries = geometry.getGeometries();
 
-  let lineString1 = new LineString(coordinates);
+  // const curveStartCoord = coordinates[0]
+  // const curveEndCoord = coordinates[currentIx]
+  // const bez = new Bezier(
+  //   curveStartCoord[0], curveStartCoord[1],
+  //   (curveStartCoord[0] + curveEndCoord[0])/2, (curveStartCoord[1] +  curveEndCoord[1])/2,
+  //   curveEndCoord[0], curveEndCoord[1]
+  // );
+  // const curved = bez.getLUT(16).map(item => [item.x, item.y]);
+  // console.log('curved', curved, coordinates)
+
+  var line = {
+    "type": "Feature",
+    "properties": {},
+    "geometry": {
+      "type": "LineString",
+      "coordinates": coordinates
+    }
+  };
+
+  // const curved = turf.bezier(line, {resolution: 4_000});
+  const curved = turf.bezier(line, {resolution: 4_000});
+
+  const coordsCurve = curved['geometry']['coordinates'];
+  console.log('coordsCurve', coordsCurve)
+  let lineString1 = new LineString(coordsCurve);
+  // let lineString1 = new LineString(coordinates);
   const centerLineCoords = lineString1.getCoordinates();
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
   geometries[RibsIx] = new MultiLineString([[]]);
@@ -428,15 +491,20 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     elements: []
   }
 
-  for (let i = 1; i < coordinates.length; i++) {
-    const curCoord = coordinates[i]
-    const prevCoord = coordinates[i-1]
+  for (let i = 1; i < coordsCurve.length; i++) {
+    const curCoord = coordsCurve[i]
+    const prevCoord = coordsCurve[i-1]
+
+  // for (let i = 1; i < coordinates.length; i++) {
+  //   const curCoord = coordinates[i]
+  //   const prevCoord = coordinates[i-1]
     let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
     let cur = new p5.Vector(curCoord[0], curCoord[1])
     let direction = p5.Vector.sub(cur, prev)
     if (direction.mag() === 0) {
       continue;
     }
+
 
     // normalize to 1 meter
     let directionNorm = p5.Vector.normalize(direction)
@@ -513,6 +581,15 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   ribsGeom.getLineStrings().forEach(ls => geometries[RibsIx].appendLineString(ls))
 
   const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+  const parser = new jsts.io.OL3Parser();
+  parser.inject(
+    Polygon,
+    LineString
+  );
+
+  const boundaryJsts = parser.read(boundaryGeom)
+  console.log('boundaryJsts', boundaryGeom, boundaryJsts)
+
   geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
   geometry.setGeometries(geometries);
   return geometry;
@@ -554,21 +631,21 @@ drawFmsLane.on('drawend', (evt) => {
     if (rib.getCoordinates().length === 0) {
       return;
     }
-    console.log('rib', rib, rib.getCoordinates())
+    // console.log('rib', rib, rib.getCoordinates())
     const ribFeature = new Feature(rib);
     ribFeature.set('fmsLaneType', 'ribs')
-    console.log('ribFeature', ribFeature)
+    // console.log('ribFeature', ribFeature)
     ribsSource.addFeature(ribFeature);
   })
 
   const centerLineGeom = geometries[PtclJSON.CenterLineIx]
-  console.log('centerLineGeom', centerLineGeom)
+  // console.log('centerLineGeom', centerLineGeom)
   const centerLineFeature = new Feature(centerLineGeom)
   centerLineFeature.set('fmsLaneType', 'centerLine')
   centerLineSource.addFeature(centerLineFeature)
 
   const vecSource = evt.target.source_;
-  console.log('vecSource', vecSource)
+  // console.log('vecSource', vecSource)
   setTimeout(() => {
     vecSource.clear()
   }, 0)
@@ -584,7 +661,7 @@ typeSelect.onchange = function () {
     map.addInteraction(drawFmsLane);
     map.addInteraction(snap);
     map.removeInteraction(select);
-    // map.addInteraction(modify);
+    map.removeInteraction(modify);
 
   } else {
     map.removeInteraction(drawFmsLane);
