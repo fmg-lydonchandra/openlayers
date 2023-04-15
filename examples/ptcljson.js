@@ -43,6 +43,7 @@ const RibsIx = 1;
 const CenterLineIx = 2;
 const HalfLaneWidthMeter = 10;
 let modifyType = 'ribs'
+let modifyDelete = false
 
 const style = new Style({
   image: new Circle({
@@ -371,9 +372,9 @@ select.on('select', function (e) {
   modify = new Modify({
     features: featuresToModify,
     // deleteCondition: never,
-    condition: function (event) {
-      return primaryAction(event) && !platformModifierKeyOnly(event);
-    },
+    // condition: function (event) {
+    //   return primaryAction(event) && !platformModifierKeyOnly(event);
+    // },
     style: function (feature) {
       feature.get('features').forEach(function (modifyFeature) {
         // console.log('modifyFeature', modifyFeature)
@@ -410,8 +411,6 @@ select.on('select', function (e) {
               geometry.scale(1, undefined, center);
               geometry.rotate(currentAngle - initialAngle, center);
 
-
-
               modifyGeometry.geometry = geometry;
 
               const pathSectionId = modifyFeature.get('fmsPathSectionId')
@@ -419,13 +418,13 @@ select.on('select', function (e) {
               const ribId = modifyFeature.get('fmsRibsId')
               const rib = pathSection.elements.find(elem => elem.id === ribId);
               const newAngle = currentAngle - initialAngle
-              rib.referenceHeading = toRotationFromEastRad(newAngle)
+              rib.referenceHeading = toRotationFromEastRad(currentAngle)
               console.log(
-                // toDegrees(initialAngle),
-                toDegrees(rib.referenceHeading),
-                // toDegrees(currentAngle - initialAngle)
+                toDegrees(initialAngle),
+                // toDegrees(rib.referenceHeading),
+                toDegrees(newAngle)
               )
-              console.log(rib)
+              // console.log(rib)
             }
           }
         }
@@ -448,7 +447,33 @@ select.on('select', function (e) {
   });
 
   modify.on('modifyend', function (event) {
+    console.log('modifyend', event)
     event.features.forEach(function (feature) {
+
+      if (modifyDelete) {
+        const pathSectionId = feature.get('fmsPathSectionId')
+        const pathSection = fmsPathSections[pathSectionId]
+        const ribId = feature.get('fmsRibsId')
+        const ribIx = pathSection.elements.findIndex(elem => elem.id === ribId)
+        pathSection.elements.splice(ribIx, 1)
+        ribsSource.removeFeature(feature)
+
+        const ribsCoords = []
+        const centerLineCoords = []
+        for (let i = 0; i < pathSection.elements.length; i++) {
+          const pathSectionElem = pathSection.elements[i]
+          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+          ribsCoords.push(ribCoords)
+          centerLineCoords.push([pathSectionElem.referencePoint.x, pathSectionElem.referencePoint.y])
+        }
+        const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+        boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
+
+        const centerLineGeom = new LineString(centerLineCoords)
+        // console.log(centerLineGeom.getGeometry())
+        centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(centerLineGeom)
+        return
+      }
 
       const modifyGeometry = feature.get('modifyGeometry');
       if (modifyGeometry) {
@@ -501,7 +526,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     }
   };
 
-  const curved = bezier(line, {resolution: 1_000});
+  const curved = bezier(line, {resolution: 500});
   const coordsCurve = curved['geometry']['coordinates'];
   let lineString1 = new LineString(coordsCurve);
   // let lineString1 = new LineString(coordinates);
@@ -660,6 +685,7 @@ drawFmsLane.on('drawend', (evt) => {
   // console.log('centerLineGeom', centerLineGeom)
   const centerLineFeature = new Feature(centerLineGeom)
   centerLineFeature.set('fmsLaneType', 'centerLine')
+  centerLineFeature.set('fmsPathSectionId', pathSection.id)
   centerLineSource.addFeature(centerLineFeature)
 
   const vecSource = evt.target.source_;
@@ -689,8 +715,12 @@ typeSelect.onchange = function () {
     // map.removeInteraction(snap);
 
     map.addInteraction(select);
+    modifyDelete = false
     if (value === 'Modify - Ribs') {
       modifyType = 'ribs'
+    } else if (value === 'Delete - Ribs') {
+      modifyType = 'ribs'
+      modifyDelete = true
     } else if (value === 'Modify - CenterLine') {
       modifyType = 'centerLine'
     }
