@@ -204,6 +204,7 @@ const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
   source: boundarySource,
   style: (feature, a, b) => {
+    console.log('style', boundarySource)
     const poly = feature.getGeometry().getCoordinates();
     const turfPoly = polygon(poly);
     const kinks1 = kinks(turfPoly);
@@ -501,6 +502,7 @@ select.on('select', function (e) {
   map.addInteraction(centerLineSnap)
 })
 
+let useBezier = false
 
 const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   let currentIx = coordinates.length-1;
@@ -526,10 +528,16 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     }
   };
 
-  const curved = bezier(line, {resolution: 500});
-  const coordsCurve = curved['geometry']['coordinates'];
-  let lineString1 = new LineString(coordsCurve);
-  // let lineString1 = new LineString(coordinates);
+  let lineString1;
+  if (useBezier) {
+    const curved = bezier(line, {resolution: 500});
+    const coordsCurve = curved['geometry']['coordinates'];
+    lineString1 = new LineString(coordsCurve);
+  }
+  else {
+    lineString1 = new LineString(coordinates);
+  }
+
   const centerLineCoords = lineString1.getCoordinates();
   geometries[CenterLineIx].setCoordinates(centerLineCoords);
   geometries[RibsIx] = new MultiLineString([[]]);
@@ -538,13 +546,13 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     elements: []
   }
 
-  for (let i = 1; i < coordsCurve.length; i++) {
-    const curCoord = coordsCurve[i]
-    const prevCoord = coordsCurve[i-1]
+  // for (let i = 1; i < coordsCurve.length; i++) {
+  //   const curCoord = coordsCurve[i]
+  //   const prevCoord = coordsCurve[i-1]
 
-  // for (let i = 1; i < centerLineCoords.length; i++) {
-  //   const curCoord = centerLineCoords[i]
-  //   const prevCoord = centerLineCoords[i-1]
+  for (let i = 1; i < centerLineCoords.length; i++) {
+    const curCoord = centerLineCoords[i]
+    const prevCoord = centerLineCoords[i-1]
     let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
     let cur = new p5.Vector(curCoord[0], curCoord[1])
     let direction = p5.Vector.sub(cur, prev)
