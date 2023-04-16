@@ -267,6 +267,7 @@ class Snap extends PointerInteraction {
     if (result) {
       evt.coordinate = result.vertex.slice(0, 2);
       evt.pixel = result.vertexPixel;
+      evt.feature = result.feature;
     }
     return super.handleEvent(evt);
   }
@@ -407,6 +408,12 @@ class Snap extends PointerInteraction {
     }
   }
 
+  getLastSnapToResult() {
+    if (this.lastSnapToResult_) {
+      return this.lastSnapToResult_;
+    }
+  }
+
   /**
    * @param {import("../pixel.js").Pixel} pixel Pixel
    * @param {import("../coordinate.js").Coordinate} pixelCoordinate Coordinate
@@ -426,7 +433,6 @@ class Snap extends PointerInteraction {
     );
 
     const segments = this.rBush_.getInExtent(box);
-
     const segmentsLength = segments.length;
     if (segmentsLength === 0) {
       return null;
@@ -434,6 +440,7 @@ class Snap extends PointerInteraction {
 
     let closestVertex;
     let minSquaredDistance = Infinity;
+    let closestFeature;
 
     const squaredPixelTolerance = this.pixelTolerance_ * this.pixelTolerance_;
     const getResult = () => {
@@ -447,6 +454,7 @@ class Snap extends PointerInteraction {
               Math.round(vertexPixel[0]),
               Math.round(vertexPixel[1]),
             ],
+            feature: closestFeature,
           };
         }
       }
@@ -463,12 +471,14 @@ class Snap extends PointerInteraction {
             if (delta < minSquaredDistance) {
               closestVertex = vertex;
               minSquaredDistance = delta;
+              closestFeature = segmentData.feature;
             }
           });
         }
       }
       const result = getResult();
       if (result) {
+        this.lastSnapToResult_ = result;
         return result;
       }
     }

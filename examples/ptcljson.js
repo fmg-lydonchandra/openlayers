@@ -204,7 +204,7 @@ const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
   source: boundarySource,
   style: (feature, a, b) => {
-    console.log('style', boundarySource)
+    // console.log('style', boundarySource)
     const poly = feature.getGeometry().getCoordinates();
     const turfPoly = polygon(poly);
     const kinks1 = kinks(turfPoly);
@@ -478,7 +478,6 @@ select.on('select', function (e) {
 
       const modifyGeometry = feature.get('modifyGeometry');
       if (modifyGeometry) {
-        // console.log(feature);
         feature.setGeometry(modifyGeometry.geometry);
         feature.unset('modifyGeometry', true);
 
@@ -494,7 +493,6 @@ select.on('select', function (e) {
         boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
       }
     });
-    //boundarySource.get()
   });
   map.addInteraction(modify);
   map.addInteraction(snap)
@@ -654,7 +652,19 @@ const drawFmsLane = new Draw({
 
 drawFmsLane.on('drawstart', (evt) => {
   evt.feature.set('fmsPathSectionId', uuidv4())
-  console.log('drawstart', evt, map.getFeaturesAtPixel(evt.target.downPx_));
+
+  console.log('drawstart', map.getFeaturesAtPixel(evt.target.downPx_))
+  const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
+  const snappedRibs = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
+  if (snappedRibs) {
+    const pathSectionId = snappedRibs.get('fmsPathSectionId')
+    const ribId = snappedRibs.get('fmsRibsId')
+    const rib = fmsPathSections[pathSectionId].elements.find(elem => elem.id === ribId)
+    evt.feature.set('fmsPrevPathSectionId', pathSectionId)
+    evt.feature.set('fmsPrevRibsId', ribId)
+    console.log(rib)
+  }
+  // console.log('drawstart', snap.getLastSnapToResult(), evt/*, map.getFeaturesAtPixel(evt.target.downPx_)*/);
 })
 
 /**
@@ -664,15 +674,27 @@ drawFmsLane.on('drawstart', (evt) => {
 drawFmsLane.on('drawend', (evt) => {
   console.log('drawend', evt)
 
+  const fmsPrevPathSectionId =  evt.feature.get('fmsPrevPathSectionId')
+  const fmsPrevRibsId = evt.feature.get('fmsPrevRibsId')
+  console.log('current', evt.feature.get('fmsPathSectionId'), 'prev', fmsPrevPathSectionId, fmsPrevRibsId)
+
+
   const geomCol = evt.feature.getGeometry();
   const pathSection = geomCol.get('pathSection')
   pathSection.id = evt.feature.get('fmsPathSectionId')
+
+
+  if (fmsPrevPathSectionId && fmsPrevRibsId) {
+    //todo: set ribs to same reference heading
+    const prevRibsReferenceHeading = fmsPathSections[fmsPrevPathSectionId].elements.find(elem => elem.id === fmsPrevRibsId).referenceHeading
+    pathSection.elements[0].referenceHeading = prevRibsReferenceHeading
+  }
   fmsPathSections[pathSection.id] = pathSection
+
 
   console.log('drawend geomCol', geomCol, pathSection)
   pathSection.elements.forEach(elem => {
     const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
-    // console.log('ribCoords', ribCoords)
     const ribLineString = new LineString(ribCoords)
     const ribFeature = new Feature(ribLineString);
     ribFeature.set('fmsLaneType', 'ribs')
@@ -681,6 +703,7 @@ drawFmsLane.on('drawend', (evt) => {
     ribsSource.addFeature(ribFeature);
   });
 
+  //todo: update boundary based on ribs
   const geometries = geomCol.getGeometries()
   const boundaryGeom = geometries[PtclJSON.BoundaryIx]
   const boundaryFeature = new Feature(boundaryGeom)
