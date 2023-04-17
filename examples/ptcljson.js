@@ -42,6 +42,11 @@ const HalfLaneWidthMeter = 10;
 let modifyType = 'ribs'
 let modifyDelete = false
 
+const REDRAW_RIBS = 1
+const REDRAW_CENTERLINE = 2
+const REDRAW_BOUNDARY = 4
+// const REDRAW_ALL = 8
+
 const style = new Style({
   image: new Circle({
     radius: 5,
@@ -279,10 +284,6 @@ map.on('loadend', function () {
 
 const select = new Select({});
 
-// const defaultStyle = new Modify({source: source})
-//   .getOverlay()
-//   .getStyleFunction();
-
 let modifyRibs = new Modify({
   source: source,
   insertVertexCondition: never,
@@ -383,30 +384,16 @@ select.on('select', function (e) {
   // Rib can be deleted by pressing Alt + Click on center point
   modifyRibs.on('modifyend', function (event) {
     event.features.forEach(function (feature) {
+      const pathSectionId = feature.get('fmsPathSectionId')
 
       if (modifyDelete) {
         // on delete rib update fmsPathSections
-        const pathSectionId = feature.get('fmsPathSectionId')
         const pathSection = fmsPathSections[pathSectionId]
         const ribId = feature.get('fmsRibsId')
         const ribIx = pathSection.elements.findIndex(elem => elem.id === ribId)
         pathSection.elements.splice(ribIx, 1)
         ribsSource.removeFeature(feature)
-
-        const ribsCoords = []
-        const centerLineCoords = []
-        pathSection.elements.forEach(elem => {
-          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
-          ribsCoords.push(ribCoords)
-          centerLineCoords.push(ribCoords[1])
-        })
-
-        const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-        boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
-
-        const centerLineGeom = new LineString(centerLineCoords)
-        centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(centerLineGeom)
-
+        redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY)
         return;
       }
 
@@ -414,16 +401,7 @@ select.on('select', function (e) {
       if (modifyGeometry) {
         feature.setGeometry(modifyGeometry.geometry);
         feature.unset('modifyGeometry', true);
-
-        const pathSectionId = feature.get('fmsPathSectionId')
-        const pathSection = fmsPathSections[pathSectionId]
-        const ribsCoords = []
-        pathSection.elements.forEach(elem => {
-          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
-          ribsCoords.push(ribCoords)
-        })
-        const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-        boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
+        redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY)
       }
     });
   });
@@ -434,6 +412,32 @@ select.on('select', function (e) {
 })
 
 let useBezier = false
+
+const redrawPathSection = function(pathSectionId, redrawFlags) {
+  const pathSection = fmsPathSections[pathSectionId]
+  const ribsCoords = []
+  const centerLineCoords = []
+  pathSection.elements.forEach(elem => {
+    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
+    ribsCoords.push(ribCoords)
+    centerLineCoords.push(ribCoords[1])
+  })
+
+  if (redrawFlags & REDRAW_RIBS) {
+    const ribsGeom = new MultiLineString(ribsCoords)
+    ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(ribsGeom)
+  }
+
+  if (redrawFlags & REDRAW_CENTERLINE) {
+    const centerLineGeom = new LineString(centerLineCoords)
+    centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(centerLineGeom)
+  }
+
+  if (redrawFlags & REDRAW_BOUNDARY) {
+    const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+    boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
+  }
+}
 
 const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   let currentIx = coordinates.length-1;
@@ -648,10 +652,6 @@ drawFmsLane.on('drawend', (evt) => {
     vecSource.clear()
   }, 0)
 });
-
-const drawPathSection = (pathSection) => {
-
-}
 
 map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
