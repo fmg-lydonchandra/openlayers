@@ -45,7 +45,12 @@ let modifyDelete = false
 const REDRAW_RIBS = 1
 const REDRAW_CENTERLINE = 2
 const REDRAW_BOUNDARY = 4
-// const REDRAW_ALL = 8
+
+/**
+ * Our data store
+ * @type {{}}
+ */
+const fmsPathSections = {}
 
 const style = new Style({
   image: new Circle({
@@ -576,13 +581,14 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   return geometry;
 }
 
-const fmsPathSections = {}
+/**
+ * Draw geometryCollection, when drawend, create features from geometryCollection and
+ * add them to respective ribsSource, centerLineSource, boundarySource
+ */
 const drawFmsLane = new Draw({
   type: 'LineString',
   source: source,
-  geometryFunction: function (a, b) {
-    return geometryFunctionFmsLane(a, b)
-  },
+  geometryFunction: geometryFunctionFmsLane,
   style: getStyle1
 });
 
