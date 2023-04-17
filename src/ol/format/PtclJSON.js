@@ -52,7 +52,7 @@ class PtclJSON extends JSONFeature {
         new MultiLineString([[]]),
         new LineString([])
       ]);
-      let centreLines = [];
+      let centreLineCoords = [];
       let ribCoords = [];
       for (let j = 0; j < pathSec.numElements; j++) {
         const pathSecElem = pathSec.elements[j];
@@ -63,7 +63,7 @@ class PtclJSON extends JSONFeature {
         const mgrsInst = new Mgrs();
         const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, this.mgrsSquare);
         ribCoords.push(this.calcRibsCoordsFromMgrs(pathSecElem, this.mgrsSquare))
-        centreLines.push(centerPoint);
+        centreLineCoords.push(centerPoint);
       }
       const geometries = geometry.getGeometries();
 
@@ -73,8 +73,8 @@ class PtclJSON extends JSONFeature {
       let boundaryGeom = PtclJSON.getBoundaryGeom(ribCoords);
       geometries[PtclJSON.BoundaryIx] = boundaryGeom.transform('EPSG:28350', 'EPSG:3857');
 
-      let centreLineGeom = new LineString(centreLines);
-      geometries[PtclJSON.CenterLineIx] = centreLineGeom.transform('EPSG:28350', 'EPSG:3857');
+      let centerLineGeom = new LineString(centreLineCoords);
+      geometries[PtclJSON.CenterLineIx] = centerLineGeom.transform('EPSG:28350', 'EPSG:3857');
 
       feature.setId("ptcl_" + pathSec.id);
       geometry.setGeometries(geometries)
@@ -85,6 +85,11 @@ class PtclJSON extends JSONFeature {
     return features;
   }
 
+  /**
+   * Create a LineString from 3 points (left, center, right)
+   * @param ribCoords
+   * @returns {LineString}
+   */
   static ribToLineString(ribCoords) {
     const LeftIx = 0;
     const CenterIx = 1;
@@ -98,6 +103,12 @@ class PtclJSON extends JSONFeature {
       ]
     )
   }
+
+  /**
+   * Create a MultiLineString from an array of ribs coordinates [(left, center, right)]
+   * @param ribsCoords
+   * @returns {MultiLineString}
+   */
   static ribsToMultiLineString(ribsCoords) {
     const returnMultiLineString = new MultiLineString([[]])
     if (ribsCoords.length < 2) {

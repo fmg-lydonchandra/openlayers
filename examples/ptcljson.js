@@ -4,14 +4,11 @@ import Map from '../src/ol/Map.js';
 import PtclJSON from '../src/ol/format/PtclJSON.js';
 import VectorSource from '../src/ol/source/Vector.js';
 import View from '../src/ol/View.js';
-import XYZ from '../src/ol/source/XYZ.js';
 import proj4 from 'proj4';
 import {Circle as CircleStyle, Circle, Fill, Stroke, Style, Text} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
 import {register} from '../src/ol/proj/proj4.js';
-import TopoJSON from '../src/ol/format/TopoJSON.js';
 import {defaults as defaultControls} from '../src/ol/control/defaults.js';
-import {ZoomToExtent} from '../src/ol/control.js';
 import BingMaps from '../src/ol/source/BingMaps.js';
 import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,7 +18,6 @@ import {
   LineString,
   MultiLineString,
   MultiPoint,
-  MultiPolygon,
   Point,
   Polygon
 } from '../src/ol/geom.js';
@@ -31,10 +27,11 @@ import {toDegrees} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
-import booleanValid from '@turf/boolean-valid';
-import * as turf from '@turf/helpers';
 
 //todo: trace on survey data, left hand side ?
+//todo: add connectionNode to start and end of pathSection
+//todo: add direction arrow to centerline
+//todo: only snap at start or end of pathSection (not in middle)
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
@@ -129,7 +126,6 @@ const getStyle1 = function (feature) {
     const poly = boundary.getCoordinates();
     const turfPoly = polygon(poly);
     const kinks1 = kinks(turfPoly);
-    // console.log(kinks1)
     if (kinks1.features.length > 0) {
       styles.push(new Style({
         stroke: new Stroke({
@@ -161,7 +157,6 @@ const getStyle1 = function (feature) {
     );
     const coordinates = result.coordinates;
     if (coordinates) {
-      // console.log('coordinates', coordinates)
       styles.push(
         new Style({
           geometry: new GeometryCollection([
@@ -204,7 +199,6 @@ const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
   source: boundarySource,
   style: (feature, a, b) => {
-    // console.log('style', boundarySource)
     const poly = feature.getGeometry().getCoordinates();
     const turfPoly = polygon(poly);
     const kinks1 = kinks(turfPoly);
@@ -274,10 +268,8 @@ const map = new Map({
 var firstLoad = false;
 
 map.on('loadend', function () {
-  // console.log('loadend')
   if (!firstLoad) {
     const feature = vectorPtcl.values_.source.getFeatures()[0];
-    console.log('feature', feature)
     const mapView = map.getView()
     mapView.fit(feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx].getExtent());
     mapView.setZoom(mapView.getZoom() - 2)
@@ -285,65 +277,17 @@ map.on('loadend', function () {
   }
 });
 
-const select = new Select({
-  // style: (feature) => {
-  //   console.log(feature)
-  // }
-});
+const select = new Select({});
 
-const modifyStyle = new Style({
-  text: new Text({
-    text: 'Drag to modify',
-    font: '12px Calibri,sans-serif',
-    fill: new Fill({
-      color: 'rgba(255, 255, 255, 1)',
-    }),
-    backgroundFill: new Fill({
-      color: 'rgba(0, 0, 0, 0.7)',
-    }),
-    padding: [2, 2, 2, 2],
-    textAlign: 'left',
-    offsetX: 15,
-  }),
-});
+// const defaultStyle = new Modify({source: source})
+//   .getOverlay()
+//   .getStyleFunction();
 
-const defaultStyle = new Modify({source: source})
-  .getOverlay()
-  .getStyleFunction();
-
-let modify = new Modify({
+let modifyRibs = new Modify({
   source: source,
   insertVertexCondition: never,
-  // deleteCondition: never,
-  // style: modifyStyle
-  style: function (feature) {
-  }
+  style: function (feature) {}
 });
-
-// const createFeaturesToModify = (features, modifyType) => {
-//   const featuresRetVal = []
-//   switch(modifyType) {
-//     case 'ribs': {
-//       features.forEach(feat => {
-//         const geometry = feat.getGeometry()
-//         console.log(' createFeaturesToModify geometry', geometry)
-//         if (geometry.getType() === 'GeometryCollection') {
-//           const ribsLineStrings = geometry.getGeometries()[RibsIx].getLineStrings()
-//           ribsLineStrings.forEach(ribLs => {
-//             const ribsFeature = new Feature(ribLs)
-//             featuresRetVal.push(ribsFeature)
-//           })
-//         }
-//       });
-//     }
-//     break;
-//     case 'centerLine': {
-//
-//     }
-//     break;
-//   }
-//   return new Collection(featuresRetVal);
-// }
 
 let snap = new Snap({
   source: source,
@@ -355,6 +299,7 @@ let centerLineSnap = new Snap({
   source: centerLineSource,
 });
 
+// select feature first and then modifyRibs selected features
 select.on('select', function (e) {
   const selected = select.getFeatures()
   const featuresToModify = new Collection()
@@ -364,13 +309,12 @@ select.on('select', function (e) {
     }
   })
   selected.clear();
-  console.log('on select', selected)
 
   map.removeInteraction(snap)
   map.removeInteraction(ptclSnap)
-  map.removeInteraction(modify)
+  map.removeInteraction(modifyRibs)
 
-  modify = new Modify({
+  modifyRibs = new Modify({
     features: featuresToModify,
     // deleteCondition: never,
     // condition: function (event) {
@@ -378,8 +322,6 @@ select.on('select', function (e) {
     // },
     style: function (feature) {
       feature.get('features').forEach(function (modifyFeature) {
-        // console.log('modifyFeature', modifyFeature)
-
         const modifyGeometry = modifyFeature.get('modifyGeometry');
         if (modifyGeometry) {
           const point = feature.getGeometry().getCoordinates();
@@ -409,35 +351,26 @@ select.on('select', function (e) {
             if (currentRadius > 0) {
               const currentAngle = Math.atan2(dy, dx);
               const geometry = modifyGeometry.geometry0.clone();
-              geometry.scale(1, undefined, center);
               geometry.rotate(currentAngle - initialAngle, center);
 
               modifyGeometry.geometry = geometry;
 
+              //modifyRibs stored rib in fmsPathSections based on new angle
               const pathSectionId = modifyFeature.get('fmsPathSectionId')
               const pathSection = fmsPathSections[pathSectionId]
               const ribId = modifyFeature.get('fmsRibsId')
               const rib = pathSection.elements.find(elem => elem.id === ribId);
-              const newAngle = currentAngle - initialAngle
+              // const newAngle = currentAngle - initialAngle
               rib.referenceHeading = toRotationFromEastRad(currentAngle)
-              console.log(
-                toDegrees(initialAngle),
-                // toDegrees(rib.referenceHeading),
-                toDegrees(newAngle)
-              )
-              // console.log(rib)
             }
           }
         }
       })
-
-      const styles = getStyle1(feature.get('features')[0]);
-      // console.log('styles', styles)
-      return styles
+      return getStyle1(feature.get('features')[0]);
     }
   });
 
-  modify.on('modifystart', function (event) {
+  modifyRibs.on('modifystart', function (event) {
     event.features.forEach(function (feature) {
       feature.set(
         'modifyGeometry',
@@ -447,11 +380,12 @@ select.on('select', function (e) {
     });
   });
 
-  modify.on('modifyend', function (event) {
-    console.log('modifyend', event)
+  // Rib can be deleted by pressing Alt + Click on center point
+  modifyRibs.on('modifyend', function (event) {
     event.features.forEach(function (feature) {
 
       if (modifyDelete) {
+        // on delete rib update fmsPathSections
         const pathSectionId = feature.get('fmsPathSectionId')
         const pathSection = fmsPathSections[pathSectionId]
         const ribId = feature.get('fmsRibsId')
@@ -461,19 +395,19 @@ select.on('select', function (e) {
 
         const ribsCoords = []
         const centerLineCoords = []
-        for (let i = 0; i < pathSection.elements.length; i++) {
-          const pathSectionElem = pathSection.elements[i]
-          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+        pathSection.elements.forEach(elem => {
+          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
           ribsCoords.push(ribCoords)
-          centerLineCoords.push([pathSectionElem.referencePoint.x, pathSectionElem.referencePoint.y])
-        }
+          centerLineCoords.push(ribCoords[1])
+        })
+
         const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
         boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
 
         const centerLineGeom = new LineString(centerLineCoords)
-        // console.log(centerLineGeom.getGeometry())
         centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(centerLineGeom)
-        return
+
+        return;
       }
 
       const modifyGeometry = feature.get('modifyGeometry');
@@ -484,17 +418,16 @@ select.on('select', function (e) {
         const pathSectionId = feature.get('fmsPathSectionId')
         const pathSection = fmsPathSections[pathSectionId]
         const ribsCoords = []
-        for (let i = 0; i < pathSection.elements.length; i++) {
-          const pathSectionElem = pathSection.elements[i]
-          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+        pathSection.elements.forEach(elem => {
+          const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
           ribsCoords.push(ribCoords)
-        }
+        })
         const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
         boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
       }
     });
   });
-  map.addInteraction(modify);
+  map.addInteraction(modifyRibs);
   map.addInteraction(snap)
   map.addInteraction(ptclSnap)
   map.addInteraction(centerLineSnap)
@@ -517,17 +450,16 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   }
   const geometries = geometry.getGeometries();
 
-  var line = {
-    "type": "Feature",
-    "properties": {},
-    "geometry": {
-      "type": "LineString",
-      "coordinates": coordinates
-    }
-  };
-
   let lineString1;
   if (useBezier) {
+    var line = {
+      "type": "Feature",
+      "properties": {},
+      "geometry": {
+        "type": "LineString",
+        "coordinates": coordinates
+      }
+    };
     const curved = bezier(line, {resolution: 500});
     const coordsCurve = curved['geometry']['coordinates'];
     lineString1 = new LineString(coordsCurve);
@@ -657,14 +589,13 @@ drawFmsLane.on('drawstart', (evt) => {
   const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
   const snappedRibs = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
   if (snappedRibs) {
+    //todo: edit connection ribs, synchronise them
     const pathSectionId = snappedRibs.get('fmsPathSectionId')
     const ribId = snappedRibs.get('fmsRibsId')
     const rib = fmsPathSections[pathSectionId].elements.find(elem => elem.id === ribId)
     evt.feature.set('fmsPrevPathSectionId', pathSectionId)
     evt.feature.set('fmsPrevRibsId', ribId)
-    console.log(rib)
   }
-  // console.log('drawstart', snap.getLastSnapToResult(), evt/*, map.getFeaturesAtPixel(evt.target.downPx_)*/);
 })
 
 /**
@@ -672,17 +603,12 @@ drawFmsLane.on('drawstart', (evt) => {
  * and clear drawn features to avoid confusion
  */
 drawFmsLane.on('drawend', (evt) => {
-  console.log('drawend', evt)
-
   const fmsPrevPathSectionId =  evt.feature.get('fmsPrevPathSectionId')
   const fmsPrevRibsId = evt.feature.get('fmsPrevRibsId')
-  console.log('current', evt.feature.get('fmsPathSectionId'), 'prev', fmsPrevPathSectionId, fmsPrevRibsId)
-
 
   const geomCol = evt.feature.getGeometry();
   const pathSection = geomCol.get('pathSection')
   pathSection.id = evt.feature.get('fmsPathSectionId')
-
 
   if (fmsPrevPathSectionId && fmsPrevRibsId) {
     //todo: set ribs to same reference heading
@@ -691,10 +617,12 @@ drawFmsLane.on('drawend', (evt) => {
   }
   fmsPathSections[pathSection.id] = pathSection
 
-
-  console.log('drawend geomCol', geomCol, pathSection)
+  const ribsCoords = []
+  let centerLineCoords = [];
   pathSection.elements.forEach(elem => {
     const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
+    ribsCoords.push(ribCoords)
+    centerLineCoords.push(ribCoords[1])
     const ribLineString = new LineString(ribCoords)
     const ribFeature = new Feature(ribLineString);
     ribFeature.set('fmsLaneType', 'ribs')
@@ -703,28 +631,27 @@ drawFmsLane.on('drawend', (evt) => {
     ribsSource.addFeature(ribFeature);
   });
 
-  //todo: update boundary based on ribs
-  const geometries = geomCol.getGeometries()
-  const boundaryGeom = geometries[PtclJSON.BoundaryIx]
+  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
   const boundaryFeature = new Feature(boundaryGeom)
   boundaryFeature.set('fmsLaneType', 'boundary')
   boundaryFeature.set('fmsPathSectionId', pathSection.id)
-
   boundarySource.addFeature(boundaryFeature)
 
-  const centerLineGeom = geometries[PtclJSON.CenterLineIx]
-  // console.log('centerLineGeom', centerLineGeom)
+  let centerLineGeom = new LineString(centerLineCoords);
   const centerLineFeature = new Feature(centerLineGeom)
   centerLineFeature.set('fmsLaneType', 'centerLine')
   centerLineFeature.set('fmsPathSectionId', pathSection.id)
   centerLineSource.addFeature(centerLineFeature)
 
   const vecSource = evt.target.source_;
-  // console.log('vecSource', vecSource)
   setTimeout(() => {
     vecSource.clear()
   }, 0)
 });
+
+const drawPathSection = (pathSection) => {
+
+}
 
 map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
@@ -739,11 +666,10 @@ typeSelect.onchange = function () {
     map.addInteraction(snap);
     map.addInteraction(centerLineSnap);
     map.removeInteraction(select);
-    map.removeInteraction(modify);
+    map.removeInteraction(modifyRibs);
 
   } else {
     map.removeInteraction(drawFmsLane);
-    // map.removeInteraction(snap);
 
     map.addInteraction(select);
     modifyDelete = false
@@ -755,7 +681,6 @@ typeSelect.onchange = function () {
     } else if (value === 'Modify - CenterLine') {
       modifyType = 'centerLine'
     }
-    // map.addInteraction(modify);
   }
 };
 
