@@ -35,9 +35,6 @@ import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
-const BoundaryIx = 0;
-const RibsIx = 1;
-const CenterLineIx = 2;
 const HalfLaneWidthMeter = 10;
 let modifyType = 'ribs'
 let modifyDelete = false
@@ -132,10 +129,11 @@ const getStyle1 = function (feature) {
   }
 
   if (feature.getGeometry().getType() === 'GeometryCollection') {
-    const boundary = feature.getGeometry().getGeometries()[BoundaryIx];
+    const boundary = feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx];
     const poly = boundary.getCoordinates();
     const turfPoly = polygon(poly);
     const kinks1 = kinks(turfPoly);
+    //todo: detect self intersection ?
     if (kinks1.features.length > 0) {
       styles.push(new Style({
         stroke: new Stroke({
@@ -186,6 +184,24 @@ const getStyle1 = function (feature) {
         })
       );
     }
+
+    // geometry.forEachSegment(function (start, end) {
+    //   const dx = end[0] - start[0];
+    //   const dy = end[1] - start[1];
+    //   const rotation = Math.atan2(dy, dx);
+    //   // arrows
+    //   styles.push(
+    //     new Style({
+    //       geometry: new Point(end),
+    //       image: new Icon({
+    //         src: 'data/arrow.png',
+    //         anchor: [0.75, 0.5],
+    //         rotateWithView: true,
+    //         rotation: -rotation,
+    //       }),
+    //     })
+    //   );
+    // });
   }
   return styles;
 }
@@ -230,9 +246,9 @@ const boundaryLayer = new VectorLayer({
   }
 })
 
-const source = new VectorSource();
-const vector = new VectorLayer({
-  source: source,
+const drawSource = new VectorSource();
+const newVector = new VectorLayer({
+  source: drawSource,
   style: getStyle1
 });
 const ptclSource = new VectorSource({
@@ -267,7 +283,7 @@ const bing = new TileLayer({
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, vector, ribsLayer, centerLineLayer, boundaryLayer],
+  layers: [ bing, vectorPtcl, newVector, ribsLayer, centerLineLayer, boundaryLayer],
   target: 'map',
   view: new View({
     center: [0, 0],
@@ -287,16 +303,8 @@ map.on('loadend', function () {
   }
 });
 
-const select = new Select({});
-
-let modifyRibs = new Modify({
-  source: source,
-  insertVertexCondition: never,
-  style: function (feature) {}
-});
-
 let snap = new Snap({
-  source: source,
+  source: drawSource,
 });
 let ptclSnap = new Snap({
   source: ptclSource,
@@ -305,6 +313,8 @@ let centerLineSnap = new Snap({
   source: centerLineSource,
 });
 
+let modifyRibs;
+const select = new Select();
 // select feature first and then modifyRibs selected features
 select.on('select', function (e) {
   const selected = select.getFeatures()
@@ -322,10 +332,6 @@ select.on('select', function (e) {
 
   modifyRibs = new Modify({
     features: featuresToModify,
-    // deleteCondition: never,
-    // condition: function (event) {
-    //   return primaryAction(event) && !platformModifierKeyOnly(event);
-    // },
     style: function (feature) {
       feature.get('features').forEach(function (modifyFeature) {
         const modifyGeometry = modifyFeature.get('modifyGeometry');
@@ -478,8 +484,8 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   }
 
   const centerLineCoords = lineString1.getCoordinates();
-  geometries[CenterLineIx].setCoordinates(centerLineCoords);
-  geometries[RibsIx] = new MultiLineString([[]]);
+  geometries[PtclJSON.CenterLineIx].setCoordinates(centerLineCoords);
+  geometries[PtclJSON.RibsIx] = new MultiLineString([[]]);
 
   const pathSection = {
     elements: []
@@ -573,10 +579,10 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     ribsCoords.push(ribCoords)
   }
   const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
-  ribsGeom.getLineStrings().forEach(ls => geometries[RibsIx].appendLineString(ls))
+  ribsGeom.getLineStrings().forEach(ls => geometries[PtclJSON.RibsIx].appendLineString(ls))
 
   const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-  geometries[BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
+  geometries[PtclJSON.BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
   geometry.setGeometries(geometries);
   return geometry;
 }
@@ -587,7 +593,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
  */
 const drawFmsLane = new Draw({
   type: 'LineString',
-  source: source,
+  source: drawSource,
   geometryFunction: geometryFunctionFmsLane,
   style: getStyle1
 });
@@ -655,6 +661,7 @@ drawFmsLane.on('drawend', (evt) => {
 
   const vecSource = evt.target.source_;
   setTimeout(() => {
+    //todo: investigate why setTimeout is needed, otherwise vecSource is not cleared
     vecSource.clear()
   }, 0)
 });
