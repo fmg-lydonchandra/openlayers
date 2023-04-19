@@ -22,12 +22,12 @@ import {
   Polygon
 } from '../src/ol/geom.js';
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
-import {never, platformModifierKeyOnly, primaryAction} from '../src/ol/events/condition.js';
 import {toDegrees} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
+//todo: PtcJSON to use same multiple layers so can be edited
 //todo: trace on survey data, left hand side ?
 //todo: add connectionNode to start and end of pathSection
 //todo: add direction arrow to centerline
@@ -44,16 +44,16 @@ const REDRAW_CENTERLINE = 2
 const REDRAW_BOUNDARY = 4
 
 /**
- * Our data store
+ * Our data store, source of truth, draw, modify, delete update this
  * @type {{}}
  */
-const fmsPathSections = {}
+let fmsPathSections = {}
 
 const style = new Style({
   image: new Circle({
-    radius: 5,
+    radius: 6,
     fill: new Fill({
-      color: 'rgba(255,255,255,0.4)'
+      color: 'green'
     }),
   }),
   fill: new Fill({
@@ -132,8 +132,9 @@ const getStyle1 = function (feature) {
     const boundary = feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx];
     const poly = boundary.getCoordinates();
     const turfPoly = polygon(poly);
-    const kinks1 = kinks(turfPoly);
+    //detect kinks / invalid boundary polygon
     //todo: detect self intersection ?
+    const kinks1 = kinks(turfPoly);
     if (kinks1.features.length > 0) {
       styles.push(new Style({
         stroke: new Stroke({
@@ -165,6 +166,7 @@ const getStyle1 = function (feature) {
     );
     const coordinates = result.coordinates;
     if (coordinates) {
+      // style for ribs rotation
       styles.push(
         new Style({
           geometry: new GeometryCollection([
@@ -261,6 +263,11 @@ const ptclSource = new VectorSource({
       lat_band: 'J',
       column: 'M',
       row: 'K',
+    },
+    layers: {
+      boundary: boundaryLayer,
+      centerLine: centerLineLayer,
+      ribs: ribsLayer,
     }
   }),
   overlaps: false,
@@ -269,6 +276,7 @@ const vectorPtcl = new VectorLayer({
   source: ptclSource,
   style: style,
 });
+fmsPathSections = ptclSource.getFeatures();
 
 const bing = new TileLayer({
   visible: true,
@@ -294,13 +302,18 @@ const map = new Map({
 var firstLoad = false;
 
 map.on('loadend', function () {
-  if (!firstLoad) {
-    const feature = vectorPtcl.values_.source.getFeatures()[0];
-    const mapView = map.getView()
-    mapView.fit(feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx].getExtent());
-    mapView.setZoom(mapView.getZoom() - 2)
-    firstLoad = true;
+  if(firstLoad) {
+    return;
   }
+  const feature = boundarySource.getFeatures()[0];
+  if (!feature) {
+    return;
+  }
+  console.log('ptclSource.getFmsPathSections()', ptclSource.getFmsPathSections())
+  const mapView = map.getView()
+  mapView.fit(feature.getGeometry().getExtent());
+  mapView.setZoom(mapView.getZoom() - 2)
+  firstLoad = true;
 });
 
 let snap = new Snap({
@@ -671,6 +684,10 @@ map.addInteraction(snap);
 map.addInteraction(ptclSnap)
 map.addInteraction(centerLineSnap);
 
+/**
+ * Currently user has to manually select whether to draw or modify/delete
+ * @type {HTMLElement}
+ */
 const typeSelect = document.getElementById('type');
 typeSelect.onchange = function () {
   let value = typeSelect.value;
