@@ -6,7 +6,6 @@ import Feature from '../Feature.js';
 import {GeometryCollection, LineString, MultiLineString, MultiPoint} from '../geom.js';
 import Mgrs from '../../../public/mgrs.js';
 import Polygon from '../geom/Polygon.js';
-import { v4 as uuidv4 } from 'uuid';
 import Point from '../geom/Point.js';
 
 class PtclJSON extends JSONFeature {
@@ -66,7 +65,6 @@ class PtclJSON extends JSONFeature {
 
       let centerLineCoords = [];
       let ribsCoords = [];
-      let firstLastPoints = [];
       for (let j = 0; j < pathSection.numElements; j++) {
         const pathSecElem = pathSection.elements[j];
         pathSecElem.id = j;
@@ -87,15 +85,22 @@ class PtclJSON extends JSONFeature {
         ribsCoords.push(ribCoords)
         centerLineCoords.push(centerPointMapProj);
         if(j === 0 || j === pathSection.numElements - 1) {
-          firstLastPoints.push(centerPoint);
+          const ribLineString = new LineString(ribCoords)
+          const ribFeature = new Feature(ribLineString);
+          ribFeature.set('fmsLaneType', 'ribs')
+          ribFeature.set('fmsPathSectionId', pathSection.id)
+          ribFeature.set('fmsRibsId', j)
+          this.layers_.ribs.getSource().addFeature(ribFeature);
         }
 
-        const ribLineString = new LineString(ribCoords)
-        const ribFeature = new Feature(ribLineString);
-        ribFeature.set('fmsLaneType', 'ribs')
-        ribFeature.set('fmsPathSectionId', pathSection.id)
-        ribFeature.set('fmsRibsId', j)
-        this.layers_.ribs.getSource().addFeature(ribFeature);
+        //todo: this causes severe performance issues when loading flinders ptcl json
+
+        // const ribLineString = new LineString(ribCoords)
+        // const ribFeature = new Feature(ribLineString);
+        // ribFeature.set('fmsLaneType', 'ribs')
+        // ribFeature.set('fmsPathSectionId', pathSection.id)
+        // ribFeature.set('fmsRibsId', j)
+        // this.layers_.ribs.getSource().addFeature(ribFeature);
       }
 
       const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)

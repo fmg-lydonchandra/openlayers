@@ -27,12 +27,11 @@ import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
-//todo: PtcJSON to use same multiple layers so can be edited
 //todo: trace on survey data, left hand side ?
 //todo: add connectionNode to start and end of pathSection
 //todo: add direction arrow to centerline
 //todo: only snap at start or end of pathSection (not in middle)
-
+//todo: address performance issues with lots of ribs features
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
 let halfLaneWidthMeter = 10;
@@ -51,7 +50,7 @@ let fmsPathSections;
 
 const style = new Style({
   image: new Circle({
-    radius: 6,
+    radius: 8,
     fill: new Fill({
       color: 'green'
     }),
@@ -272,10 +271,33 @@ const ptclSource = new VectorSource({
   }),
   overlaps: false,
 });
+
+// const ptclSource = new VectorSource({
+//   url: 'flinders.ptcl.json',
+//   format: new PtclJSON({
+//     dataProjection: 'EPSG:28350',
+//     style: style,
+//     mgrsSquare: {
+//       utm_zone: 50,
+//       lat_band: 'K',
+//       column: 'Q',
+//       row: 'A',
+//     },
+//     layers: {
+//       boundary: boundaryLayer,
+//       centerLine: centerLineLayer,
+//       ribs: ribsLayer,
+//     }
+//   }),
+//   overlaps: false,
+// });
+
+
 const vectorPtcl = new VectorLayer({
   source: ptclSource,
   style: style,
 });
+vectorPtcl.setVisible(true)
 // fmsPathSections = ptclSource.getFeatures();
 
 const bing = new TileLayer({
@@ -310,7 +332,6 @@ map.on('loadend', function () {
     return;
   }
   fmsPathSections = ptclSource.getFormat().getFmsPathSections()
-  // console.log('ptclSource.getFmsPathSections()', ptclSource.getFormat().getFmsPathSections())
 
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
@@ -322,7 +343,8 @@ let snap = new Snap({
   source: drawSource,
 });
 let ptclSnap = new Snap({
-  source: ptclSource,
+  source: ribsSource,
+  // source: ptclSource,
 });
 let centerLineSnap = new Snap({
   source: centerLineSource,
@@ -434,7 +456,7 @@ select.on('select', function (e) {
   map.addInteraction(modifyRibs);
   map.addInteraction(snap)
   map.addInteraction(ptclSnap)
-  map.addInteraction(centerLineSnap)
+  // map.addInteraction(centerLineSnap)
 })
 
 let useBezier = false
@@ -619,11 +641,12 @@ drawFmsLane.on('drawstart', (evt) => {
 
   console.log('drawstart', map.getFeaturesAtPixel(evt.target.downPx_))
   const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
-  const snappedRibs = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
-  if (snappedRibs) {
+  const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
+  if (snappedRib) {
     //todo: edit connection ribs, synchronise them
-    const pathSectionId = snappedRibs.get('fmsPathSectionId')
-    const ribId = snappedRibs.get('fmsRibsId')
+    const pathSectionId = snappedRib.get('fmsPathSectionId')
+    const ribId = snappedRib.get('fmsRibsId')
+    console.log('rib', snappedRib)
     // const rib = fmsPathSections.find(pathSec => pathSec.id === pathSectionId).elements.find(elem => elem.id === ribId)
     evt.feature.set('fmsPrevPathSectionId', pathSectionId)
     evt.feature.set('fmsPrevRibsId', ribId)
@@ -642,7 +665,8 @@ drawFmsLane.on('drawend', (evt) => {
   const pathSection = geomCol.get('pathSection')
   pathSection.id = evt.feature.get('fmsPathSectionId')
 
-  if (fmsPrevPathSectionId && fmsPrevRibsId) {
+  if (fmsPrevPathSectionId != null && fmsPrevRibsId != null ) {
+    //pathSectionId and ribsId can be 0
     //todo: set ribs to same reference heading
     const prevRib = fmsPathSections.find(pathSec => pathSec.id === fmsPrevPathSectionId).elements.find(elem => elem.id === fmsPrevRibsId);
     const prevRibsReferenceHeading = prevRib.referenceHeading
@@ -689,7 +713,7 @@ drawFmsLane.on('drawend', (evt) => {
 map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
-map.addInteraction(centerLineSnap);
+// map.addInteraction(centerLineSnap);
 
 /**
  * Currently user has to manually select whether to draw or modify/delete
@@ -701,7 +725,7 @@ typeSelect.onchange = function () {
   if (value === 'Draw') {
     map.addInteraction(drawFmsLane);
     map.addInteraction(snap);
-    map.addInteraction(centerLineSnap);
+    // map.addInteraction(centerLineSnap);
     map.removeInteraction(select);
     map.removeInteraction(modifyRibs);
 
