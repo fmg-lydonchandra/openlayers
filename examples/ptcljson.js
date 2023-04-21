@@ -64,7 +64,6 @@ const getDirectionArrowStyle = function(feature) {
   }
   const geometry = feature.getGeometry();
 
-
   geometry.forEachSegment(function(start, end, c, d) {
     console.log(c, d)
     var dx = end[0] - start[0];
@@ -794,6 +793,12 @@ const laneWidthInput = document.getElementById('lane-width');
 halfLaneWidthMeter = laneWidthInput.value / 2
 laneWidthInput.onchange = function () {
   halfLaneWidthMeter = laneWidthInput.value / 2
+}
+
+const directionArrow = document.getElementById('direction-arrow');
+directionArrow.onclick = () => {
+  showDirectionArrow = directionArrow.checked
+  centerLineLayer.changed()
 }
 
 const toRotationFromEastRad = (rotationFromNorthRad) => {
