@@ -35,7 +35,7 @@ import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
-const HalfLaneWidthMeter = 10;
+let halfLaneWidthMeter = 10;
 let modifyType = 'ribs'
 let modifyDelete = false
 
@@ -47,7 +47,7 @@ const REDRAW_BOUNDARY = 4
  * Our data store, source of truth, draw, modify, delete update this
  * @type {{}}
  */
-let fmsPathSections = {}
+let fmsPathSections;
 
 const style = new Style({
   image: new Circle({
@@ -276,7 +276,7 @@ const vectorPtcl = new VectorLayer({
   source: ptclSource,
   style: style,
 });
-fmsPathSections = ptclSource.getFeatures();
+// fmsPathSections = ptclSource.getFeatures();
 
 const bing = new TileLayer({
   visible: true,
@@ -309,7 +309,9 @@ map.on('loadend', function () {
   if (!feature) {
     return;
   }
-  console.log('ptclSource.getFmsPathSections()', ptclSource.getFmsPathSections())
+  fmsPathSections = ptclSource.getFormat().getFmsPathSections()
+  // console.log('ptclSource.getFmsPathSections()', ptclSource.getFormat().getFmsPathSections())
+
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
   mapView.setZoom(mapView.getZoom() - 2)
@@ -382,7 +384,7 @@ select.on('select', function (e) {
 
               //modifyRibs stored rib in fmsPathSections based on new angle
               const pathSectionId = modifyFeature.get('fmsPathSectionId')
-              const pathSection = fmsPathSections[pathSectionId]
+              const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
               const ribId = modifyFeature.get('fmsRibsId')
               const rib = pathSection.elements.find(elem => elem.id === ribId);
               // const newAngle = currentAngle - initialAngle
@@ -412,7 +414,7 @@ select.on('select', function (e) {
 
       if (modifyDelete) {
         // on delete rib update fmsPathSections
-        const pathSection = fmsPathSections[pathSectionId]
+        const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
         const ribId = feature.get('fmsRibsId')
         const ribIx = pathSection.elements.findIndex(elem => elem.id === ribId)
         pathSection.elements.splice(ribIx, 1)
@@ -422,7 +424,7 @@ select.on('select', function (e) {
       }
 
       const modifyGeometry = feature.get('modifyGeometry');
-      if (modifyGeometry) {
+      if (modifyGeometry)  {
         feature.setGeometry(modifyGeometry.geometry);
         feature.unset('modifyGeometry', true);
         redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY)
@@ -438,7 +440,8 @@ select.on('select', function (e) {
 let useBezier = false
 
 const redrawPathSection = function(pathSectionId, redrawFlags) {
-  const pathSection = fmsPathSections[pathSectionId]
+  const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
+  debugger
   const ribsCoords = []
   const centerLineCoords = []
   pathSection.elements.forEach(elem => {
@@ -521,7 +524,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
     // normalize to 1 meter
     let directionNorm = p5.Vector.normalize(direction)
     // multiply to get half lane width
-    let directionLaneWidth = p5.Vector.mult(directionNorm, HalfLaneWidthMeter)
+    let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
     // translate back to prevCoord
     let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
     let leftRib = new LineString(
@@ -560,10 +563,10 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
       referenceHeading: rotationFromEast,
       referenceHeadingUnit: 'rad',
       leftEdge: {
-        distanceFromReferencePoint: HalfLaneWidthMeter,
+        distanceFromReferencePoint: halfLaneWidthMeter,
       },
       rightEdge: {
-        distanceFromReferencePoint: HalfLaneWidthMeter,
+        distanceFromReferencePoint: halfLaneWidthMeter,
       }
     }
     pathSection.elements.push(pathSectionElement);
@@ -575,10 +578,10 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
         referenceHeading: rotationFromEast,
         referenceHeadingUnit: 'rad',
         leftEdge: {
-          distanceFromReferencePoint: HalfLaneWidthMeter,
+          distanceFromReferencePoint: halfLaneWidthMeter,
         },
         rightEdge: {
-          distanceFromReferencePoint: HalfLaneWidthMeter,
+          distanceFromReferencePoint: halfLaneWidthMeter,
         }
       }
       pathSection.elements.push(lastPathSectionElement);
@@ -621,7 +624,7 @@ drawFmsLane.on('drawstart', (evt) => {
     //todo: edit connection ribs, synchronise them
     const pathSectionId = snappedRibs.get('fmsPathSectionId')
     const ribId = snappedRibs.get('fmsRibsId')
-    const rib = fmsPathSections[pathSectionId].elements.find(elem => elem.id === ribId)
+    // const rib = fmsPathSections.find(pathSec => pathSec.id === pathSectionId).elements.find(elem => elem.id === ribId)
     evt.feature.set('fmsPrevPathSectionId', pathSectionId)
     evt.feature.set('fmsPrevRibsId', ribId)
   }
@@ -641,10 +644,14 @@ drawFmsLane.on('drawend', (evt) => {
 
   if (fmsPrevPathSectionId && fmsPrevRibsId) {
     //todo: set ribs to same reference heading
-    const prevRibsReferenceHeading = fmsPathSections[fmsPrevPathSectionId].elements.find(elem => elem.id === fmsPrevRibsId).referenceHeading
+    const prevRib = fmsPathSections.find(pathSec => pathSec.id === fmsPrevPathSectionId).elements.find(elem => elem.id === fmsPrevRibsId);
+    const prevRibsReferenceHeading = prevRib.referenceHeading
+
     pathSection.elements[0].referenceHeading = prevRibsReferenceHeading
+    pathSection.elements[0].leftEdge.distanceFromReferencePoint = prevRib.leftEdge.distanceFromReferencePoint
+    pathSection.elements[0].rightEdge.distanceFromReferencePoint = prevRib.rightEdge.distanceFromReferencePoint
   }
-  fmsPathSections[pathSection.id] = pathSection
+  fmsPathSections.push(pathSection)
 
   const ribsCoords = []
   let centerLineCoords = [];
@@ -713,7 +720,18 @@ typeSelect.onchange = function () {
     }
   }
 };
-
+const laneWidthInput = document.getElementById('lane-width');
+halfLaneWidthMeter = laneWidthInput.value / 2
+laneWidthInput.onchange = function () {
+  halfLaneWidthMeter = laneWidthInput.value / 2
+  fmsPathSections.forEach(pathSection => {
+    pathSection.elements.forEach(elem => {
+      const ribFeature = ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSection.id && feat.get('fmsRibsId') === elem.id)
+      const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
+      ribFeature.getGeometry().setCoordinates(ribCoords)
+    })
+  })
+}
 const toRotationFromEastRad = (rotationFromNorthRad) => {
   let rotationFromNorthDegrees = toDegrees(rotationFromNorthRad)
   let toRotationFromEastRad;

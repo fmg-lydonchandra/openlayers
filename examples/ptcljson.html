@@ -13,7 +13,6 @@ resources:
   - http://localhost:8080/p5.js
   - http://localhost:8080/turf.min.js
 ---
-<div id="map" class="map"></div>
 <form>
   <label for="type">Control type</label>
   <select id="type">
@@ -22,4 +21,7 @@ resources:
     <option value="Delete - Ribs">Delete Ribs</option>
     <option value="Modify - CenterLine">Modify CenterLine</option>
   </select>
+  <label for="lane-width">Lane Width</label>
+  <input type="text" id="lane-width" name="lane-width" value="17">
 </form>
+<div id="map" class="map"></div>

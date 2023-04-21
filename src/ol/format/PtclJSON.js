@@ -7,6 +7,7 @@ import {GeometryCollection, LineString, MultiLineString, MultiPoint} from '../ge
 import Mgrs from '../../../public/mgrs.js';
 import Polygon from '../geom/Polygon.js';
 import { v4 as uuidv4 } from 'uuid';
+import Point from '../geom/Point.js';
 
 class PtclJSON extends JSONFeature {
   constructor(options) {
@@ -21,7 +22,14 @@ class PtclJSON extends JSONFeature {
     if (!this.mgrsSquare) {
       throw new Error("mgrsSquare is not set");
     }
-    this.fmsPathSections_ = {}
+    //original ptclJson
+    this.ptclJson_ = {}
+    this.ptclJsonMetricsRad = {
+      AreaMapDePtr: {
+        pathSections: []
+      }
+    }
+    //transformed to utm-zone coordinates in meters and radians
   }
 
   static BoundaryIx = 0;
@@ -34,12 +42,14 @@ class PtclJSON extends JSONFeature {
   }
 
   getFmsPathSections() {
-    return this.fmsPathSections_;
+    return this.ptclJsonMetricsRad.AreaMapDePtr.pathSections;
   }
+
   readFeaturesFromObject(object, options) {
+    this.ptclJson_ = object;
     options = options ? options : {};
     let features = [];
-    const pathSections = object.AreaMapDePtr.pathSections
+    const pathSections = this.ptclJson_.AreaMapDePtr.pathSections
     if (!pathSections) {
       return features;
     }
@@ -51,27 +61,36 @@ class PtclJSON extends JSONFeature {
     //   row: 'K',
     // }
     for (let i = 0, ii = pathSections.length; i < ii; i++) {
-      const pathSection = pathSections[i];
-      this.fmsPathSections_[pathSection.id] = pathSection;
+      const pathSection = JSON.parse(JSON.stringify(pathSections[i]))
+      this.ptclJsonMetricsRad.AreaMapDePtr.pathSections.push(pathSection);
+
       let centerLineCoords = [];
       let ribsCoords = [];
       let firstLastPoints = [];
       for (let j = 0; j < pathSection.numElements; j++) {
         const pathSecElem = pathSection.elements[j];
+        pathSecElem.id = j;
         const centerPointMgrs = [
           pathSecElem.referencePoint.x / 1000,
           pathSecElem.referencePoint.y / 1000,
         ];
         const mgrsInst = new Mgrs();
         const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, this.mgrsSquare);
-        const ribCoords = this.calcRibsCoordsFromMgrs(pathSecElem, this.mgrsSquare)
+        const centerPointMapProj = new Point(centerPoint).transform('EPSG:28350', 'EPSG:3857').getCoordinates()
+        pathSecElem.referencePoint.x = centerPointMapProj[0];
+        pathSecElem.referencePoint.y = centerPointMapProj[1];
+        pathSecElem.leftEdge.distanceFromReferencePoint = pathSecElem.leftEdge.distanceFromReferencePoint / 1000;
+        pathSecElem.rightEdge.distanceFromReferencePoint = pathSecElem.rightEdge.distanceFromReferencePoint / 1000;
+        pathSecElem.referenceHeading = pathSecElem.referenceHeading / 10_000
+
+        const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSecElem)
         ribsCoords.push(ribCoords)
-        centerLineCoords.push(centerPoint);
+        centerLineCoords.push(centerPointMapProj);
         if(j === 0 || j === pathSection.numElements - 1) {
           firstLastPoints.push(centerPoint);
         }
 
-        const ribLineString = new LineString(ribCoords).transform('EPSG:28350', 'EPSG:3857')
+        const ribLineString = new LineString(ribCoords)
         const ribFeature = new Feature(ribLineString);
         ribFeature.set('fmsLaneType', 'ribs')
         ribFeature.set('fmsPathSectionId', pathSection.id)
@@ -79,13 +98,13 @@ class PtclJSON extends JSONFeature {
         this.layers_.ribs.getSource().addFeature(ribFeature);
       }
 
-      const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords).transform('EPSG:28350', 'EPSG:3857')
+      const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
       const boundaryFeature = new Feature(boundaryGeom)
       boundaryFeature.set('fmsLaneType', 'boundary')
       boundaryFeature.set('fmsPathSectionId', pathSection.id)
       this.layers_.boundary.getSource().addFeature(boundaryFeature)
 
-      let centerLineGeom = new LineString(centerLineCoords).transform('EPSG:28350', 'EPSG:3857');
+      let centerLineGeom = new LineString(centerLineCoords)
       const centerLineFeature = new Feature(centerLineGeom)
       centerLineFeature.set('fmsLaneType', 'centerLine')
       centerLineFeature.set('fmsPathSectionId', pathSection.id)
@@ -161,39 +180,6 @@ class PtclJSON extends JSONFeature {
       boundaryCoords.push(rib[2]);
     }
     return new Polygon([ boundaryCoords ]);
-  }
-
-  /**
-   * Use for PTCL json import, using MGRS transformation to UTM zone 50 / X
-   * @param pathSectionElem
-   * @param mgrsSquare
-   * @returns {*[]}
-   */
-  calcRibsCoordsFromMgrs(pathSectionElem, mgrsSquare)
-  {
-    const mgrsInst = new Mgrs();
-
-    // TO DO: implement using NetTopologySuite
-    const angle = (pathSectionElem.referenceHeading / 10000) + (Math.PI / 2);
-    // 90 degrees to direction
-    const left = [
-      pathSectionElem.referencePoint.x / 1000 + (pathSectionElem.leftEdge.distanceFromReferencePoint / 1000 * Math.cos(angle)),
-      pathSectionElem.referencePoint.y / 1000 + (pathSectionElem.leftEdge.distanceFromReferencePoint / 1000 * Math.sin(angle))
-    ];
-    const center = [
-      pathSectionElem.referencePoint.x / 1000,
-      pathSectionElem.referencePoint.y / 1000
-    ];
-    const right = [
-      pathSectionElem.referencePoint.x / 1000 - pathSectionElem.rightEdge.distanceFromReferencePoint / 1000 * Math.cos(angle),
-      pathSectionElem.referencePoint.y / 1000 - pathSectionElem.rightEdge.distanceFromReferencePoint / 1000 * Math.sin(angle)
-    ];
-
-    return [
-      mgrsInst.mgrs_to_utm(left, mgrsSquare),
-      mgrsInst.mgrs_to_utm(center, mgrsSquare),
-      mgrsInst.mgrs_to_utm(right, mgrsSquare)
-    ];
   }
 
   static calcRibsCoordsInMapProjection(pathSectionElem) {
