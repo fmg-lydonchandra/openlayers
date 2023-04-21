@@ -187,6 +187,19 @@ class PtclJSON extends JSONFeature {
     return new Polygon([ boundaryCoords ]);
   }
 
+//   public Coordinate[] GetCoordinates()
+//   {
+// // TO DO: implement using NetTopologySuite
+//     double angle = Yaw + (Math.PI / 2); // 90 degrees to direction
+//     var leftCoordinate = new Coordinate(Math.Ceiling(X + DistanceLeftCm * Math.Cos(angle)), Math.Ceiling(Y + DistanceLeftCm * Math.Sin(angle)));
+//     angle = Yaw - (Math.PI / 2); // -90 degrees to direction
+//     var rightCoordinate = new Coordinate(Math.Ceiling(X + DistanceRightCm * Math.Cos(angle)), Math.Ceiling(Y + DistanceRightCm * Math.Sin(angle)));
+//     return new []
+//     {
+//       leftCoordinate, new Coordinate(X, Y), rightCoordinate
+//     };
+//   }
+
   static calcRibsCoordsInMapProjection(pathSectionElem) {
     const angle = (pathSectionElem.referenceHeading) + (Math.PI / 2);
 
@@ -199,9 +212,10 @@ class PtclJSON extends JSONFeature {
       pathSectionElem.referencePoint.x,
       pathSectionElem.referencePoint.y
     ];
+    const angleRight = (pathSectionElem.referenceHeading) - (Math.PI / 2);
     const right = [
-      pathSectionElem.referencePoint.x - pathSectionElem.rightEdge.distanceFromReferencePoint * Math.cos(angle),
-      pathSectionElem.referencePoint.y - pathSectionElem.rightEdge.distanceFromReferencePoint * Math.sin(angle)
+      pathSectionElem.referencePoint.x + pathSectionElem.rightEdge.distanceFromReferencePoint * Math.cos(angleRight),
+      pathSectionElem.referencePoint.y + pathSectionElem.rightEdge.distanceFromReferencePoint * Math.sin(angleRight)
     ];
     return [left, center, right]
   }

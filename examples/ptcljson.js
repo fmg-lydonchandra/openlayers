@@ -5,7 +5,7 @@ import PtclJSON from '../src/ol/format/PtclJSON.js';
 import VectorSource from '../src/ol/source/Vector.js';
 import View from '../src/ol/View.js';
 import proj4 from 'proj4';
-import {Circle as CircleStyle, Circle, Fill, Stroke, Style, Text} from '../src/ol/style.js';
+import {Circle as CircleStyle, Circle, Fill, RegularShape, Stroke, Style, Text} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
 import {register} from '../src/ol/proj/proj4.js';
 import {defaults as defaultControls} from '../src/ol/control/defaults.js';
@@ -27,14 +27,14 @@ import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
+//todo: split pathSection into multiple pathSections if it is too long
+//todo: insert new pathSection for splitting into intersection
 //todo: trace on survey data, left hand side ?
 //todo: add connectionNode to start and end of pathSection
-//todo: add direction arrow to centerline
-//todo: only snap at start or end of pathSection (not in middle)
 //todo: address performance issues with lots of ribs features
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
-let halfLaneWidthMeter = 10;
+let halfLaneWidthMeter = 8.5;
 let modifyType = 'ribs'
 let modifyDelete = false
 
@@ -48,7 +48,46 @@ const REDRAW_BOUNDARY = 4
  */
 let fmsPathSections;
 
-const style = new Style({
+let showDirectionArrow = false;
+const getDirectionArrowStyle = function(feature) {
+  const styles = [
+    // linestring
+    new Style({
+      stroke: new Stroke({
+        color: 'red',
+        width: 2
+      })
+    })
+  ];
+  if (!showDirectionArrow) {
+    return styles;
+  }
+  const geometry = feature.getGeometry();
+
+
+  geometry.forEachSegment(function(start, end, c, d) {
+    console.log(c, d)
+    var dx = end[0] - start[0];
+    var dy = end[1] - start[1];
+    var rotation = Math.atan2(dy, dx);
+
+    styles.push(new Style({
+      geometry: new Point(end),
+      image: new RegularShape({
+        fill: new Fill({color: '#000'}),
+        points: 3,
+        radius: 8,
+        rotation: -rotation,
+        angle: Math.PI / 2 // rotate 90°
+      })
+    }));
+  });
+
+  return styles;
+};
+
+
+const defaultStyle = new Style({
   image: new Circle({
     radius: 8,
     fill: new Fill({
@@ -121,8 +160,8 @@ function calculateCenter(geometry) {
   };
 }
 
-const getStyle1 = function (feature) {
-  const styles = [style];
+const getRibsRotationStyle = function (feature) {
+  const styles = [defaultStyle];
   if(!feature) {
     return styles;
   }
@@ -210,17 +249,12 @@ const getStyle1 = function (feature) {
 const centerLineSource = new VectorSource();
 const centerLineLayer = new VectorLayer({
   source: centerLineSource,
-  style: new Style({
-    stroke: new Stroke({
-      color: 'red',
-      width: 4,
-    }),
-  })
+  style: getDirectionArrowStyle
 });
 const ribsSource = new VectorSource();
 const ribsLayer = new VectorLayer({
   source: ribsSource,
-  style: getStyle1
+  style: getRibsRotationStyle
 });
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
@@ -250,38 +284,18 @@ const boundaryLayer = new VectorLayer({
 const drawSource = new VectorSource();
 const newVector = new VectorLayer({
   source: drawSource,
-  style: getStyle1
+  style: getRibsRotationStyle
 });
-const ptclSource = new VectorSource({
-  url: 'HazelmerePathSectionsOnlyPtcl.json',
-  format: new PtclJSON({
-    dataProjection: 'EPSG:28350',
-    style: style,
-    mgrsSquare: {
-      utm_zone: 50,
-      lat_band: 'J',
-      column: 'M',
-      row: 'K',
-    },
-    layers: {
-      boundary: boundaryLayer,
-      centerLine: centerLineLayer,
-      ribs: ribsLayer,
-    }
-  }),
-  overlaps: false,
-});
-
 // const ptclSource = new VectorSource({
-//   url: 'flinders.ptcl.json',
+//   url: 'HazelmerePathSectionsOnlyPtcl.json',
 //   format: new PtclJSON({
 //     dataProjection: 'EPSG:28350',
 //     style: style,
 //     mgrsSquare: {
 //       utm_zone: 50,
-//       lat_band: 'K',
-//       column: 'Q',
-//       row: 'A',
+//       lat_band: 'J',
+//       column: 'M',
+//       row: 'K',
 //     },
 //     layers: {
 //       boundary: boundaryLayer,
@@ -292,10 +306,30 @@ const ptclSource = new VectorSource({
 //   overlaps: false,
 // });
 
+const ptclSource = new VectorSource({
+  url: 'flinders.ptcl.json',
+  format: new PtclJSON({
+    dataProjection: 'EPSG:28350',
+    style: defaultStyle,
+    mgrsSquare: {
+      utm_zone: 50,
+      lat_band: 'K',
+      column: 'Q',
+      row: 'A',
+    },
+    layers: {
+      boundary: boundaryLayer,
+      centerLine: centerLineLayer,
+      ribs: ribsLayer,
+    }
+  }),
+  overlaps: false,
+});
+
 
 const vectorPtcl = new VectorLayer({
   source: ptclSource,
-  style: style,
+  style: defaultStyle,
 });
 vectorPtcl.setVisible(true)
 // fmsPathSections = ptclSource.getFeatures();
@@ -335,7 +369,7 @@ map.on('loadend', function () {
 
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
-  mapView.setZoom(mapView.getZoom() - 2)
+  mapView.setZoom(mapView.getZoom() - 6)
   firstLoad = true;
 });
 
@@ -415,7 +449,7 @@ select.on('select', function (e) {
           }
         }
       })
-      return getStyle1(feature.get('features')[0]);
+      return getRibsRotationStyle(feature.get('features')[0]);
     }
   });
 
@@ -633,7 +667,7 @@ const drawFmsLane = new Draw({
   type: 'LineString',
   source: drawSource,
   geometryFunction: geometryFunctionFmsLane,
-  style: getStyle1
+  style: getRibsRotationStyle
 });
 
 drawFmsLane.on('drawstart', (evt) => {
@@ -643,7 +677,6 @@ drawFmsLane.on('drawstart', (evt) => {
   const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
   const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
   if (snappedRib) {
-    //todo: edit connection ribs, synchronise them
     const pathSectionId = snappedRib.get('fmsPathSectionId')
     const ribId = snappedRib.get('fmsRibsId')
     console.log('rib', snappedRib)
@@ -665,16 +698,29 @@ drawFmsLane.on('drawend', (evt) => {
   const pathSection = geomCol.get('pathSection')
   pathSection.id = evt.feature.get('fmsPathSectionId')
 
-  if (fmsPrevPathSectionId != null && fmsPrevRibsId != null ) {
+    if (fmsPrevPathSectionId != null && fmsPrevRibsId != null ) {
     //pathSectionId and ribsId can be 0
-    //todo: set ribs to same reference heading
     const prevRib = fmsPathSections.find(pathSec => pathSec.id === fmsPrevPathSectionId).elements.find(elem => elem.id === fmsPrevRibsId);
-    const prevRibsReferenceHeading = prevRib.referenceHeading
 
-    pathSection.elements[0].referenceHeading = prevRibsReferenceHeading
+    pathSection.elements[0].referenceHeading = prevRib.referenceHeading
     pathSection.elements[0].leftEdge.distanceFromReferencePoint = prevRib.leftEdge.distanceFromReferencePoint
     pathSection.elements[0].rightEdge.distanceFromReferencePoint = prevRib.rightEdge.distanceFromReferencePoint
   }
+
+  const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
+  const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
+  if (snappedRib) {
+    const snapPathSectionId = snappedRib.get('fmsPathSectionId')
+    const snapRibId = snappedRib.get('fmsRibsId')
+    console.log('rib', snappedRib)
+    if (snapPathSectionId != null && snapRibId != null) {
+      const nextRib = fmsPathSections.find(pathSec => pathSec.id === snapPathSectionId).elements.find(elem => elem.id === snapRibId);
+      pathSection.elements[pathSection.elements.length-1].referenceHeading = nextRib.referenceHeading
+      pathSection.elements[pathSection.elements.length-1].leftEdge.distanceFromReferencePoint = nextRib.leftEdge.distanceFromReferencePoint
+      pathSection.elements[pathSection.elements.length-1].rightEdge.distanceFromReferencePoint = nextRib.rightEdge.distanceFromReferencePoint
+    }
+  }
+
   fmsPathSections.push(pathSection)
 
   const ribsCoords = []
@@ -748,14 +794,8 @@ const laneWidthInput = document.getElementById('lane-width');
 halfLaneWidthMeter = laneWidthInput.value / 2
 laneWidthInput.onchange = function () {
   halfLaneWidthMeter = laneWidthInput.value / 2
-  fmsPathSections.forEach(pathSection => {
-    pathSection.elements.forEach(elem => {
-      const ribFeature = ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSection.id && feat.get('fmsRibsId') === elem.id)
-      const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
-      ribFeature.getGeometry().setCoordinates(ribCoords)
-    })
-  })
 }
+
 const toRotationFromEastRad = (rotationFromNorthRad) => {
   let rotationFromNorthDegrees = toDegrees(rotationFromNorthRad)
   let toRotationFromEastRad;

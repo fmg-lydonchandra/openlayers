@@ -13,15 +13,27 @@ resources:
   - http://localhost:8080/p5.js
   - http://localhost:8080/turf.min.js
 ---
-<form>
-  <label for="type">Control type</label>
-  <select id="type">
-    <option value="Draw" selected>Draw</option>
-    <option value="Modify - Ribs">Modify Ribs</option>
-    <option value="Delete - Ribs">Delete Ribs</option>
-    <option value="Modify - CenterLine">Modify CenterLine</option>
-  </select>
-  <label for="lane-width">Lane Width</label>
-  <input type="text" id="lane-width" name="lane-width" value="17">
+<form onsubmit='return false'>
+  <fieldset>
+    <label for="type">Control type</label>
+    <select id="type">
+      <option value="Draw" selected>Draw</option>
+      <option value="Modify - Ribs">Modify Ribs</option>
+      <option value="Delete - Ribs">Delete Ribs</option>
+      <option value="Modify - CenterLine">Modify CenterLine</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <label for="lane-width">Lane Width</label>
+    <input type="text" id="lane-width" name="lane-width" value="17">
+  </fieldset>
+
+  <fieldset>
+    <input type="checkbox" id="direction-arrow" name="direction-arrow" value="direction-arrow">
+    <label for="direction-arrow">Show Direction Arrow</label><br>
+    <input type="checkbox" id="center-line" name="center-line" value="center-line">
+    <label for="center-line">Show Center Line</label><br>
+  </fieldset>
 </form>
 <div id="map" class="map"></div>
