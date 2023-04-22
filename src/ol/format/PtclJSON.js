@@ -23,12 +23,12 @@ class PtclJSON extends JSONFeature {
     }
     //original ptclJson
     this.ptclJson_ = {}
-    this.ptclJsonMetricsRad = {
+    //transformed to map projection in meters and radians
+    this.ptclJsonMapProjRad = {
       AreaMapDePtr: {
         pathSections: []
       }
     }
-    //transformed to utm-zone coordinates in meters and radians
   }
 
   static BoundaryIx = 0;
@@ -41,7 +41,7 @@ class PtclJSON extends JSONFeature {
   }
 
   getFmsPathSections() {
-    return this.ptclJsonMetricsRad.AreaMapDePtr.pathSections;
+    return this.ptclJsonMapProjRad.AreaMapDePtr.pathSections;
   }
 
   readFeaturesFromObject(object, options) {
@@ -61,7 +61,7 @@ class PtclJSON extends JSONFeature {
     // }
     for (let i = 0, ii = pathSections.length; i < ii; i++) {
       const pathSection = JSON.parse(JSON.stringify(pathSections[i]))
-      this.ptclJsonMetricsRad.AreaMapDePtr.pathSections.push(pathSection);
+      this.ptclJsonMapProjRad.AreaMapDePtr.pathSections.push(pathSection);
 
       let centerLineCoords = [];
       let ribsCoords = [];
@@ -186,19 +186,6 @@ class PtclJSON extends JSONFeature {
     }
     return new Polygon([ boundaryCoords ]);
   }
-
-//   public Coordinate[] GetCoordinates()
-//   {
-// // TO DO: implement using NetTopologySuite
-//     double angle = Yaw + (Math.PI / 2); // 90 degrees to direction
-//     var leftCoordinate = new Coordinate(Math.Ceiling(X + DistanceLeftCm * Math.Cos(angle)), Math.Ceiling(Y + DistanceLeftCm * Math.Sin(angle)));
-//     angle = Yaw - (Math.PI / 2); // -90 degrees to direction
-//     var rightCoordinate = new Coordinate(Math.Ceiling(X + DistanceRightCm * Math.Cos(angle)), Math.Ceiling(Y + DistanceRightCm * Math.Sin(angle)));
-//     return new []
-//     {
-//       leftCoordinate, new Coordinate(X, Y), rightCoordinate
-//     };
-//   }
 
   static calcRibsCoordsInMapProjection(pathSectionElem) {
     const angle = (pathSectionElem.referenceHeading) + (Math.PI / 2);

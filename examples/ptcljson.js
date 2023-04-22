@@ -27,6 +27,7 @@ import Feature from '../src/ol/Feature.js';
 import {Collection} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
+//todo: serialize out into proper file for ingestion into FMS
 //todo: split pathSection into multiple pathSections if it is too long
 //todo: insert new pathSection for splitting into intersection
 //todo: trace on survey data, left hand side ?
@@ -368,7 +369,7 @@ map.on('loadend', function () {
 
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
-  mapView.setZoom(mapView.getZoom() - 6)
+  mapView.setZoom(mapView.getZoom() - 3)
   firstLoad = true;
 });
 
@@ -405,47 +406,69 @@ select.on('select', function (e) {
     style: function (feature) {
       feature.get('features').forEach(function (modifyFeature) {
         const modifyGeometry = modifyFeature.get('modifyGeometry');
-        if (modifyGeometry) {
-          const point = feature.getGeometry().getCoordinates();
-          let modifyPoint = modifyGeometry.point;
-          if (!modifyPoint) {
-            // save the initial geometry and vertex position
-            modifyPoint = point;
-            modifyGeometry.point = modifyPoint;
-            modifyGeometry.geometry0 = modifyGeometry.geometry;
-            // get anchor and minimum radius of vertices to be used
-            const result = calculateCenter(modifyGeometry.geometry0);
-            modifyGeometry.center = result.center;
-            modifyGeometry.minRadius = result.minRadius;
-          }
+        switch(modifyFeature.get('fmsLaneType')) {
+          case 'centerLine':
+            if (modifyGeometry) {
+              const modifiedCoords = modifyFeature.getGeometry().getCoordinates();
 
-          const center = modifyGeometry.center;
-          const minRadius = modifyGeometry.minRadius;
-          let dx, dy;
-          dx = modifyPoint[0] - center[0];
-          dy = modifyPoint[1] - center[1];
-          const initialRadius = Math.sqrt(dx * dx + dy * dy);
-          if (initialRadius > minRadius) {
-            const initialAngle = Math.atan2(dy, dx);
-            dx = point[0] - center[0];
-            dy = point[1] - center[1];
-            const currentRadius = Math.sqrt(dx * dx + dy * dy);
-            if (currentRadius > 0) {
-              const currentAngle = Math.atan2(dy, dx);
-              const geometry = modifyGeometry.geometry0.clone();
-              geometry.rotate(currentAngle - initialAngle, center);
-
-              modifyGeometry.geometry = geometry;
-
-              //modifyRibs stored rib in fmsPathSections based on new angle
               const pathSectionId = modifyFeature.get('fmsPathSectionId')
               const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
-              const ribId = modifyFeature.get('fmsRibsId')
-              const rib = pathSection.elements.find(elem => elem.id === ribId);
-              // const newAngle = currentAngle - initialAngle
-              rib.referenceHeading = toRotationFromEastRad(currentAngle)
+              if(modifiedCoords.length !== pathSection.elements.length) {
+                throw new Error('modifiedCoords.length !== pathSection.elements.length')
+              }
+
+              for (let i = 0; i <pathSection.elements.length; i++) {
+                const rib = pathSection.elements[i];
+                rib.referencePoint.x = modifiedCoords[i][0]
+                rib.referencePoint.y = modifiedCoords[i][1]
+              }
             }
-          }
+            break;
+
+          case 'ribs':
+            if (modifyGeometry) {
+              const point = feature.getGeometry().getCoordinates();
+              let modifyPoint = modifyGeometry.point;
+              if (!modifyPoint) {
+                // save the initial geometry and vertex position
+                modifyPoint = point;
+                modifyGeometry.point = modifyPoint;
+                modifyGeometry.geometry0 = modifyGeometry.geometry;
+                // get anchor and minimum radius of vertices to be used
+                const result = calculateCenter(modifyGeometry.geometry0);
+                modifyGeometry.center = result.center;
+                modifyGeometry.minRadius = result.minRadius;
+              }
+
+              const center = modifyGeometry.center;
+              const minRadius = modifyGeometry.minRadius;
+              let dx, dy;
+              dx = modifyPoint[0] - center[0];
+              dy = modifyPoint[1] - center[1];
+              const initialRadius = Math.sqrt(dx * dx + dy * dy);
+              if (initialRadius > minRadius) {
+                const initialAngle = Math.atan2(dy, dx);
+                dx = point[0] - center[0];
+                dy = point[1] - center[1];
+                const currentRadius = Math.sqrt(dx * dx + dy * dy);
+                if (currentRadius > 0) {
+                  const currentAngle = Math.atan2(dy, dx);
+                  const geometry = modifyGeometry.geometry0.clone();
+                  geometry.rotate(currentAngle - initialAngle, center);
+
+                  modifyGeometry.geometry = geometry;
+
+                  //modifyRibs stored rib in fmsPathSections based on new angle
+                  const pathSectionId = modifyFeature.get('fmsPathSectionId')
+                  const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
+                  const ribId = modifyFeature.get('fmsRibsId')
+                  const rib = pathSection.elements.find(elem => elem.id === ribId);
+                  // const newAngle = currentAngle - initialAngle
+                  rib.referenceHeading = toRotationFromEastRad(currentAngle)
+                }
+              }
+            }
+            break;
         }
       })
       return getRibsRotationStyle(feature.get('features')[0]);
@@ -468,14 +491,18 @@ select.on('select', function (e) {
       const pathSectionId = feature.get('fmsPathSectionId')
 
       if (modifyDelete) {
-        // on delete rib update fmsPathSections
+        // on delete rib update fmsPathSections, not done in getStyle function
         const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
         const ribId = feature.get('fmsRibsId')
         const ribIx = pathSection.elements.findIndex(elem => elem.id === ribId)
         pathSection.elements.splice(ribIx, 1)
         ribsSource.removeFeature(feature)
         redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY)
-        return;
+      }
+
+      if(modifyType === 'centerLine') {
+        select.getFeatures().clear()
+        redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY | REDRAW_RIBS)
       }
 
       const modifyGeometry = feature.get('modifyGeometry');
@@ -496,7 +523,6 @@ let useBezier = false
 
 const redrawPathSection = function(pathSectionId, redrawFlags) {
   const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
-  debugger
   const ribsCoords = []
   const centerLineCoords = []
   pathSection.elements.forEach(elem => {
