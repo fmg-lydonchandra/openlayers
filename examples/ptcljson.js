@@ -24,9 +24,11 @@ import {
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
 import {toDegrees} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
-import {Collection} from '../src/ol/index.js';
+import {Collection, Overlay} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 
+//todo: drawStart snaps to end of 'snapped' pathSection
+//todo: drawEnd snaps to start of 'snapped' pathSection
 //todo: serialize out into proper file for ingestion into FMS
 //todo: split pathSection into multiple pathSections if it is too long
 //todo: insert new pathSection for splitting into intersection
@@ -103,7 +105,7 @@ const defaultStyle = new Style({
   }),
 });
 
-const styles = [
+const bingLayers = [
   'RoadOnDemand',
   'Aerial',
   'AerialWithLabelsOnDemand',
@@ -137,26 +139,10 @@ function calculateCenter(geometry) {
   } else {
     center = getCenter(geometry.getExtent());
   }
-  let sqDistances;
-  if (coordinates) {
-    sqDistances = coordinates.map(function (coordinate) {
-      const dx = coordinate[0] - center[0];
-      const dy = coordinate[1] - center[1];
-      return dx * dx + dy * dy;
-    });
-    minRadius = Math.sqrt(Math.max.apply(Math, sqDistances)) / 3;
-  } else {
-    minRadius =
-      Math.max(
-        getWidth(geometry.getExtent()),
-        getHeight(geometry.getExtent())
-      ) / 3;
-  }
+
   return {
     center: center,
-    coordinates: coordinates,
-    minRadius: minRadius,
-    sqDistances: sqDistances,
+    coordinates: coordinates
   };
 }
 
@@ -181,9 +167,9 @@ const getRibsRotationStyle = function (feature) {
         }),
       }));
     }
-
     return styles;
   }
+
   const modifyGeometry = feature.get('modifyGeometry');
   const geometry = modifyGeometry
     ? modifyGeometry.geometry
@@ -224,24 +210,6 @@ const getRibsRotationStyle = function (feature) {
         })
       );
     }
-
-    // geometry.forEachSegment(function (start, end) {
-    //   const dx = end[0] - start[0];
-    //   const dy = end[1] - start[1];
-    //   const rotation = Math.atan2(dy, dx);
-    //   // arrows
-    //   styles.push(
-    //     new Style({
-    //       geometry: new Point(end),
-    //       image: new Icon({
-    //         src: 'data/arrow.png',
-    //         anchor: [0.75, 0.5],
-    //         rotateWithView: true,
-    //         rotation: -rotation,
-    //       }),
-    //     })
-    //   );
-    // });
   }
   return styles;
 }
@@ -339,15 +307,42 @@ const bing = new TileLayer({
   preload: Infinity,
   source: new BingMaps({
     key: 'AlEoTLTlzFB6Uf4Sy-ugXcRO21skQO7K8eObA5_L-8d20rjqZJLs2nkO1RMjGSPN',
-    imagerySet: styles[1],
+    imagerySet: bingLayers[1],
     // use maxZoom 19 to see stretched tiles instead of the BingMaps
     // "no photos at this zoom level" tiles
     maxZoom: 19
   })});
 
+const container = document.getElementById('popup');
+const content = document.getElementById('popup-content');
+const closer = document.getElementById('popup-closer');
+
+/**
+ * Create an overlay to anchor the popup to the map.
+ */
+const overlay = new Overlay({
+  element: container,
+  autoPan: {
+    animation: {
+      duration: 250,
+    },
+  },
+});
+
+/**
+ * Add a click handler to hide the popup.
+ * @return {boolean} Don't follow the href.
+ */
+closer.onclick = function () {
+  overlay.setPosition(undefined);
+  closer.blur();
+  return false;
+};
+
 const map = new Map({
   controls: defaultControls(),
   layers: [ bing, vectorPtcl, newVector, ribsLayer, centerLineLayer, boundaryLayer],
+  overlays: [overlay],
   target: 'map',
   view: new View({
     center: [0, 0],
@@ -355,7 +350,15 @@ const map = new Map({
   }),
 });
 
-var firstLoad = false;
+// map.on('singleclick', function (evt) {
+//   const coordinate = evt.coordinate;
+//   const hdms = toStringHDMS(toLonLat(coordinate));
+//   content.innerHTML = '<p>You clicked here:</p><code>' + hdms + '</code>';
+//   overlay.setPosition(coordinate);
+//   evt.stopPropagation()
+// });
+
+let firstLoad = false;
 
 map.on('loadend', function () {
   if(firstLoad) {
@@ -700,11 +703,35 @@ drawFmsLane.on('drawstart', (evt) => {
 
   console.log('drawstart', map.getFeaturesAtPixel(evt.target.downPx_))
   const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
-  const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
-  if (snappedRib) {
-    const pathSectionId = snappedRib.get('fmsPathSectionId')
-    const ribId = snappedRib.get('fmsRibsId')
-    console.log('rib', snappedRib)
+  // const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
+  const snappedRibFeatures = featuresAtPixel.filter(feat => feat.get('fmsLaneType') === 'ribs')
+  const endRibOnlyFeatures = snappedRibFeatures.filter(feat => {
+    const ribId = feat.get('fmsRibsId')
+    return ribId > 0;
+  })
+
+  if (endRibOnlyFeatures.length === 0) {
+    return;
+  }
+
+  console.log('snappedRib', snappedRibFeatures)
+  if (snappedRibFeatures.length > 0) {
+    const coordinate = evt.target.finishCoordinate_;
+    const ribInfos = []
+
+    endRibOnlyFeatures.forEach(rib => {
+      const pathSectionId = rib.get('fmsPathSectionId')
+      const ribId = rib.get('fmsRibsId')
+
+      const ribInfo = '<code>snapped to rib ' + ribId + ' of pathSection ' + pathSectionId + '</code>';
+      ribInfos.push(ribInfo)
+    })
+    content.innerHTML = ribInfos.join('<br>')
+    overlay.setPosition(coordinate);
+
+    const pathSectionId = endRibOnlyFeatures[0].get('fmsPathSectionId')
+    const ribId = endRibOnlyFeatures[0].get('fmsRibsId')
+    console.log('rib', endRibOnlyFeatures)
     // const rib = fmsPathSections.find(pathSec => pathSec.id === pathSectionId).elements.find(elem => elem.id === ribId)
     evt.feature.set('fmsPrevPathSectionId', pathSectionId)
     evt.feature.set('fmsPrevRibsId', ribId)
@@ -723,7 +750,7 @@ drawFmsLane.on('drawend', (evt) => {
   const pathSection = geomCol.get('pathSection')
   pathSection.id = evt.feature.get('fmsPathSectionId')
 
-    if (fmsPrevPathSectionId != null && fmsPrevRibsId != null ) {
+  if (fmsPrevPathSectionId != null && fmsPrevRibsId != null ) {
     //pathSectionId and ribsId can be 0
     const prevRib = fmsPathSections.find(pathSec => pathSec.id === fmsPrevPathSectionId).elements.find(elem => elem.id === fmsPrevRibsId);
 
@@ -833,11 +860,9 @@ const toRotationFromEastRad = (rotationFromNorthRad) => {
 
   if (rotationFromNorthDegrees > -90 && rotationFromNorthDegrees <= 90) {
     toRotationFromEastRad = rotationFromNorthRad + Math.PI / 2
-  }
-  else if (rotationFromNorthDegrees > 90 && rotationFromNorthDegrees <= 180) {
-    toRotationFromEastRad = rotationFromNorthRad - Math.PI*3/2
-  }
-  else {
+  } else if (rotationFromNorthDegrees > 90 && rotationFromNorthDegrees <= 180) {
+    toRotationFromEastRad = rotationFromNorthRad - Math.PI * 3 / 2
+  } else {
     toRotationFromEastRad = rotationFromNorthRad + Math.PI / 2
   }
   return toRotationFromEastRad
