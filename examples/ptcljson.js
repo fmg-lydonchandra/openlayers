@@ -268,8 +268,66 @@ const addNodesLayer = new VectorLayer({
 const addLaneSectionSource = new VectorSource();
 const addLaneSectionLayer = new VectorLayer({
   source: addLaneSectionSource,
+  style: new Style({
+    stroke: new Stroke({
+      color: 'rgba(255,0,77,0.97)',
+    })
+  })
   // style: getRibsRotationStyle
 });
+
+const bezierSource = new VectorSource();
+const bezierLayer = new VectorLayer({
+  source: bezierSource,
+  style: function(feature) {
+    const styles = [];
+    const centerLineStyle = new Style({
+      stroke: new Stroke({
+        color: '#33ff4e',
+      })
+    })
+    styles.push(centerLineStyle);
+
+    if(feature.getGeometry().getType() !== 'GeometryCollection') {
+      throw Error('GeometryCollection expected');
+    }
+    const geometries = feature.getGeometry().getGeometries();
+    const centerLine = geometries[0];
+
+    const midPointIx = Math.floor(centerLine.getCoordinates().length / 2)
+    const midPointCoord = centerLine.getCoordinates()[midPointIx];
+    styles.push(new Style({
+      geometry: new Point(midPointCoord),
+      image: new CircleStyle({
+        radius: 8,
+        fill: new Fill({
+          color: '#4eff33',
+        })
+      })
+      })
+    )
+
+    const prevIx = midPointIx - 1;
+    const prevCoord = centerLine.getCoordinates()[prevIx];
+    const dx = midPointCoord[0] - prevCoord[0];
+    const dy = midPointCoord[1] - prevCoord[1];
+    const rotation = Math.atan2(dy, dx);
+    styles.push(new Style({
+      geometry: new Point(midPointCoord),
+      image: new RegularShape({
+        fill: new Fill({
+          color: '#050505'
+        }),
+        points: 3,
+        radius: 8,
+        rotation: -rotation,
+        angle: Math.PI / 2 // rotate 90°
+      })
+    }))
+    return styles;
+  }
+});
+
 
 
 // const ptclSource = new VectorSource({
@@ -358,7 +416,7 @@ closer.onclick = function () {
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer],
+  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer, bezierLayer],
   overlays: [overlay],
   target: 'map',
   view: new View({
@@ -865,6 +923,24 @@ const getNodesStyle = function(feature) {
   return styles;
 }
 
+const modifyNodes = new Modify({
+  source: addNodesSource,
+  // style: getNodesStyle
+})
+modifyNodes.on('modifystart', (evt) => {
+  event.features.forEach(function (feature) {
+    feature.set(
+      'modifyGeometry',
+      {geometry: feature.getGeometry().clone()},
+      true
+    );
+  });
+})
+
+modifyNodes.on('modifyend', (evt) => {
+  console.log('modifyend', evt)
+})
+
 const addNodes = new Draw({
   type: 'Point',
   source: addNodesSource,
@@ -885,32 +961,32 @@ const getLaneSectionsStyle = function(feature) {
     return styles;
   }
 
-  if (feature.getGeometry().getType() === 'GeometryCollection') {
-    const geometries = feature.getGeometry().getGeometries();
-    const centerLineGeom = geometries[PtclJSON.CenterLineIx];
-    const centerLineCoords = centerLineGeom.getCoordinates();
-    const centerLineLength = centerLineCoords.length;
-    if (centerLineLength > 0) {
-      const firstCoord = centerLineCoords[0];
-      const lastCoord = centerLineCoords[centerLineLength - 1];
-      styles.push(new Style({
-        geometry: new Point(firstCoord),
-        image: new Icon({
-          src: 'images/first.svg',
-          anchor: [0.5, 0.5],
-          scale: 0.5
-        })
-      }));
-      styles.push(new Style({
-        geometry: new Point(lastCoord),
-        image: new Icon({
-          src: 'images/last.svg',
-          anchor: [0.5, 0.5],
-          scale: 0.5
-        })
-      }));
-    }
-  }
+  // if (feature.getGeometry().getType() === 'GeometryCollection') {
+  //   const geometries = feature.getGeometry().getGeometries();
+  //   const centerLineGeom = geometries[PtclJSON.CenterLineIx];
+  //   const centerLineCoords = centerLineGeom.getCoordinates();
+  //   const centerLineLength = centerLineCoords.length;
+  //   if (centerLineLength > 0) {
+  //     const firstCoord = centerLineCoords[0];
+  //     const lastCoord = centerLineCoords[centerLineLength - 1];
+  //     styles.push(new Style({
+  //       geometry: new Point(firstCoord),
+  //       image: new Icon({
+  //         src: 'images/first.svg',
+  //         anchor: [0.5, 0.5],
+  //         scale: 0.5
+  //       })
+  //     }));
+  //     styles.push(new Style({
+  //       geometry: new Point(lastCoord),
+  //       image: new Icon({
+  //         src: 'images/last.svg',
+  //         anchor: [0.5, 0.5],
+  //         scale: 0.5
+  //       })
+  //     }));
+  //   }
+  // }
   return styles;
 }
 
@@ -922,16 +998,6 @@ const addLaneSectionsDraw = new Draw({
 })
 
 
-/**
- * Draw geometryCollection, when drawend, create features from geometryCollection and
- * add them to respective ribsSource, centerLineSource, boundarySource
- */
-const drawFmsLane = new Draw({
-  type: 'LineString',
-  source: drawSource,
-  geometryFunction: drawFmsLaneGeomFn,
-  // style: getRibsRotationStyle
-});
 
 addLaneSectionsDraw.on('drawstart', (evt) => {
   evt.feature.set('fmsPathSectionId', uuidv4())
@@ -959,7 +1025,145 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   evt.feature.set('startFmsNode', startFmsNode)
   evt.feature.set('endFmsNode', endFmsNode)
-  console.log('drawend fmsNode', evt)
+  const xUnitVec = new p5.Vector(1, 0)
+
+  const bezierPt1 = startFmsNode.referencePoint
+  const pt2 = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
+  const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+  const pt2startWeight = p5.Vector.mult(pt2direction, PathSectionStartWeightMeter)
+  const bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
+
+  //todo: not sure if these calc are correct
+  const pt3 = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
+  const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+  const pt3endWeight = p5.Vector.mult(pt3direction, PathSectionEndWeightMeter)
+  const bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
+
+  const bezierPt4 = endFmsNode.referencePoint
+
+  const bez = new Bezier(
+    bezierPt1.x, bezierPt1.y,
+    bezierPt2.x, bezierPt2.y,
+    bezierPt3.x, bezierPt3.y,
+    bezierPt4.x, bezierPt4.y);
+
+  const luts = bez.getLUT(16).map(lut => [lut.x, lut.y])
+
+  const centerLine = new LineString(luts)
+  const geomCol = new GeometryCollection([
+    centerLine,
+    new MultiLineString([[]])
+  ])
+
+  const centerLineCoords = luts;
+
+  const pathSection = {
+    elements: []
+  }
+
+  for (let i = 1; i < centerLineCoords.length; i++) {
+    const curCoord = centerLineCoords[i]
+    const prevCoord = centerLineCoords[i-1]
+    let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
+    let cur = new p5.Vector(curCoord[0], curCoord[1])
+    let direction = p5.Vector.sub(cur, prev)
+    if (direction.mag() === 0) {
+      continue;
+    }
+
+    // normalize to 1 meter
+    let directionNorm = p5.Vector.normalize(direction)
+    // multiply to get half lane width
+    let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
+    // translate back to prevCoord
+    let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
+    let leftRib = new LineString(
+      [
+        prevCoord,
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+      ]);
+    leftRib.rotate(Math.PI / 2.0, prevCoord);
+
+    let rightRib = new LineString(
+      [
+        prevCoord,
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+      ]);
+    rightRib.rotate(-Math.PI / 2.0, prevCoord);
+
+    let ribLineString = new LineString(
+      [
+        leftRib.getCoordinates()[1],
+        prevCoord,
+        rightRib.getCoordinates()[1]
+      ]
+    )
+    let first = ribLineString.getCoordinates()[0];
+    let last = ribLineString.getCoordinates()[2];
+
+    let v1 = new p5.Vector(first[0], first[1]);
+    let v2 = new p5.Vector(last[0], last[1]);
+    let dirVec = p5.Vector.sub(v2, v1)
+    let rotationFromNorth = dirVec.heading()
+    let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
+
+    let pathSectionElement = {
+      id: uuidv4(),
+      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+      referenceHeading: rotationFromEast,
+      referenceHeadingUnit: 'rad',
+      leftEdge: {
+        distanceFromReferencePoint: halfLaneWidthMeter,
+      },
+      rightEdge: {
+        distanceFromReferencePoint: halfLaneWidthMeter,
+      }
+    }
+    pathSection.elements.push(pathSectionElement);
+
+    if (i === centerLineCoords.length - 1) {
+      let lastPathSectionElement = {
+        id: uuidv4(),
+        referencePoint: { x: curCoord[0], y: curCoord[1] },
+        referenceHeading: rotationFromEast,
+        referenceHeadingUnit: 'rad',
+        leftEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        }
+      }
+      pathSection.elements.push(lastPathSectionElement);
+    }
+  }
+
+  const ribsCoords = []
+  // geometry.set('pathSection', pathSection);
+  for (let i = 0; i < pathSection.elements.length; i++) {
+    const pathSectionElem = pathSection.elements[i]
+    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+    ribsCoords.push(ribCoords)
+  }
+  const geometries = geomCol.getGeometries()
+  const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
+  ribsGeom.getLineStrings().forEach(ls => geometries[1].appendLineString(ls))
+  geomCol.setGeometries(geometries)
+  const newFeat = new Feature({
+    geometry: geomCol
+  })
+  bezierSource.addFeature(newFeat)
+});
+
+/**
+ * Draw geometryCollection, when drawend, create features from geometryCollection and
+ * add them to respective ribsSource, centerLineSource, boundarySource
+ */
+const drawFmsLane = new Draw({
+  type: 'LineString',
+  source: drawSource,
+  geometryFunction: drawFmsLaneGeomFn,
+  // style: getRibsRotationStyle
 });
 
 drawFmsLane.on('drawstart', (evt) => {
@@ -1095,7 +1299,15 @@ typeSelect.onchange = function () {
       break;
     case 'add-nodes':
       map.removeInteraction(drawFmsLane);
+      map.removeInteraction(addLaneSectionsDraw);
       map.addInteraction(addNodes)
+      modifyDelete = false
+      break;
+    case 'modify-nodes':
+      map.removeInteraction(drawFmsLane);
+      map.removeInteraction(addNodes);
+      map.removeInteraction(addLaneSectionsDraw);
+      map.addInteraction(modifyNodes)
       modifyDelete = false
       break;
     case 'add-lane-sections':
