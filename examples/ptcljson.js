@@ -12,6 +12,7 @@ import {defaults as defaultControls} from '../src/ol/control/defaults.js';
 import BingMaps from '../src/ol/source/BingMaps.js';
 import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
 import { v4 as uuidv4 } from 'uuid';
+import { Bezier } from "bezier-js";
 
 import {
   GeometryCollection,
@@ -50,6 +51,9 @@ const REDRAW_BOUNDARY = 4
  * @type {{}}
  */
 let fmsPathSections;
+let fmsNodes = [];
+const PathSectionStartWeightMeter = 10;
+const PathSectionEndWeightMeter = 10;
 
 let showDirectionArrow = false;
 const getDirectionArrowStyle = function(feature) {
@@ -222,7 +226,7 @@ const centerLineLayer = new VectorLayer({
 const ribsSource = new VectorSource();
 const ribsLayer = new VectorLayer({
   source: ribsSource,
-  style: getRibsRotationStyle
+  // style: getRibsRotationStyle
 });
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
@@ -254,6 +258,20 @@ const newVector = new VectorLayer({
   source: drawSource,
   style: getRibsRotationStyle
 });
+
+const addNodesSource = new VectorSource();
+const addNodesLayer = new VectorLayer({
+  source: addNodesSource,
+  // style: getRibsRotationStyle
+});
+
+const addLaneSectionSource = new VectorSource();
+const addLaneSectionLayer = new VectorLayer({
+  source: addLaneSectionSource,
+  // style: getRibsRotationStyle
+});
+
+
 // const ptclSource = new VectorSource({
 //   url: 'HazelmerePathSectionsOnlyPtcl.json',
 //   format: new PtclJSON({
@@ -293,7 +311,6 @@ const ptclSource = new VectorSource({
   }),
   overlaps: false,
 });
-
 
 const vectorPtcl = new VectorLayer({
   source: ptclSource,
@@ -341,7 +358,7 @@ closer.onclick = function () {
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, newVector, ribsLayer, centerLineLayer, boundaryLayer],
+  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer],
   overlays: [overlay],
   target: 'map',
   view: new View({
@@ -349,14 +366,6 @@ const map = new Map({
     zoom: 2,
   }),
 });
-
-// map.on('singleclick', function (evt) {
-//   const coordinate = evt.coordinate;
-//   const hdms = toStringHDMS(toLonLat(coordinate));
-//   content.innerHTML = '<p>You clicked here:</p><code>' + hdms + '</code>';
-//   overlay.setPosition(coordinate);
-//   evt.stopPropagation()
-// });
 
 let firstLoad = false;
 
@@ -385,6 +394,9 @@ let ptclSnap = new Snap({
 });
 let centerLineSnap = new Snap({
   source: centerLineSource,
+});
+let addNodesSnap = new Snap({
+  source: addNodesSource,
 });
 
 let modifyRibs;
@@ -522,7 +534,7 @@ select.on('select', function (e) {
   // map.addInteraction(centerLineSnap)
 })
 
-let useBezier = false
+let useBezier = true
 
 const redrawPathSection = function(pathSectionId, redrawFlags) {
   const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
@@ -550,7 +562,98 @@ const redrawPathSection = function(pathSectionId, redrawFlags) {
   }
 }
 
-const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
+/**
+ * Draw a node, consisting 1 centerPoint, 1 linestring/rib, 2 left-right points
+ * @param coordinates
+ * @param geometry
+ * @returns {*|GeometryCollection}
+ */
+const CenterPointIx = 0;
+const LeftRightPointIx = 1;
+const RibIx = 2;
+
+const drawNodesGeomFn = function(coordinates, geometry) {
+  console.log('drawNodesGeomFn', coordinates, geometry)
+  let currentIx = coordinates.length-1;
+  // if (!geometry) {
+  geometry = new GeometryCollection([
+    new Point(coordinates), //center
+    new MultiPoint([]),   //left-right
+    new LineString([]) //rib
+  ]);
+
+  const geometries = geometry.getGeometries();
+
+  const curCoord = coordinates
+
+  let cur = new p5.Vector(curCoord[0], curCoord[1])
+  let direction = new p5.Vector(1, 0)
+  // normalize to 1 meter
+  let directionNorm = p5.Vector.normalize(direction)
+  // multiply to get half lane width
+  let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
+
+  let prevCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
+  let leftRib = new LineString(
+    [
+      curCoord,
+      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+    ]);
+  leftRib.rotate(Math.PI / 2.0, curCoord);
+  let rightRib = new LineString(
+    [
+      curCoord,
+      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+    ])
+  rightRib.rotate(-Math.PI / 2.0, curCoord);
+
+  let ribLineString = new LineString(
+    [
+      leftRib.getCoordinates()[1],
+      curCoord,
+      rightRib.getCoordinates()[1]
+    ]
+  )
+  geometries[RibIx].setCoordinates(ribLineString.getCoordinates());
+  //need to do 'setGeometries', simple assignment won't work
+  geometry.setGeometries(geometries);
+
+  let first = ribLineString.getCoordinates()[0];
+  let last = ribLineString.getCoordinates()[2];
+
+  let v1 = new p5.Vector(first[0], first[1]);
+  let v2 = new p5.Vector(last[0], last[1]);
+  let dirVec = p5.Vector.sub(v2, v1)
+  let rotationFromNorth = dirVec.heading()
+  let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
+
+  let fmsNode = {
+    id: uuidv4(),
+    referencePoint: { x: curCoord[0], y: curCoord[1] },
+    referenceHeading: rotationFromEast,
+    leftEdge: {
+      distanceFromReferencePoint: halfLaneWidthMeter,
+    },
+    rightEdge: {
+      distanceFromReferencePoint: halfLaneWidthMeter,
+    },
+    nextSectionsId : [],
+    prevSectionsId: []
+  }
+  geometry.set('fmsNode', fmsNode);
+  fmsNodes.push(fmsNode);
+  return geometry;
+}
+
+// const drawLaneSectionsGeomFn = function(coordinates, geometry) {
+//   if (!geometry) {
+//     geometry = new LineString(coordinates);
+//   }
+//   geometry.setCoordinates(coordinates);
+//   return geometry;
+// }
+
+const drawFmsLaneGeomFn = function(coordinates, geometry, proj, d) {
   let currentIx = coordinates.length-1;
   if (!geometry) {
     geometry = new GeometryCollection([
@@ -567,7 +670,7 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
 
   let lineString1;
   if (useBezier) {
-    var line = {
+    const line = {
       "type": "Feature",
       "properties": {},
       "geometry": {
@@ -575,9 +678,25 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
         "coordinates": coordinates
       }
     };
-    const curved = bezier(line, {resolution: 500});
+    const curved = bezier(line, {resolution: 5000});
     const coordsCurve = curved['geometry']['coordinates'];
     lineString1 = new LineString(coordsCurve);
+    if(currentIx >= 3) {
+      const bez = new Bezier(
+        coordinates[currentIx-3][0],
+        coordinates[currentIx-3][1],
+        coordinates[currentIx-2][0],
+        coordinates[currentIx-2][1],
+        coordinates[currentIx-1][0],
+        coordinates[currentIx-1][1],
+        coordinates[currentIx][0],
+        coordinates[currentIx][1]);
+      const luts = bez.getLUT(32).map(lut => [lut.x, lut.y])
+      console.log('bez', bez, luts)
+
+      lineString1 = new LineString(luts);
+
+    }
   }
   else {
     lineString1 = new LineString(coordinates);
@@ -687,6 +806,122 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
   return geometry;
 }
 
+const getNodesStyle = function(feature) {
+  const styles = [];
+  if(!feature) {
+    return styles;
+  }
+  const centerPointGeom = feature.getGeometry(); // should be Point
+  styles.push(new Style({
+    geometry: centerPointGeom,
+    image: new Circle({
+      radius: 4,
+      stroke: new Stroke({
+        color: 'rgba(0,255,217,1)',
+      }),
+      fill: new Fill({
+        color: 'rgba(0,255,217,0.3)'
+      }),
+    }),
+  }));
+
+  const curCoord = centerPointGeom.getCoordinates();
+
+  let cur = new p5.Vector(curCoord[0], curCoord[1])
+  let direction = new p5.Vector(1, 0)
+  // normalize to 1 meter
+  let directionNorm = p5.Vector.normalize(direction)
+  // multiply to get half lane width
+  let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
+
+  let prevCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
+  let leftRib = new LineString(
+    [
+      curCoord,
+      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+    ]);
+  leftRib.rotate(Math.PI / 2.0, curCoord);
+  let rightRib = new LineString(
+    [
+      curCoord,
+      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+    ])
+  rightRib.rotate(-Math.PI / 2.0, curCoord);
+
+  let ribLineString = new LineString(
+    [
+      leftRib.getCoordinates()[1],
+      curCoord,
+      rightRib.getCoordinates()[1]
+    ]
+  )
+  styles.push(new Style({
+    geometry: ribLineString,
+    stroke: new Stroke({
+      color: 'rgba(0,255,217,0.9)',
+    })
+  }))
+
+  return styles;
+}
+
+const addNodes = new Draw({
+  type: 'Point',
+  source: addNodesSource,
+  geometryFunction: drawNodesGeomFn,
+  style: getNodesStyle
+})
+
+addNodes.on('drawend', function(evt) {
+  const fmsNode = evt.feature.getGeometry().get('fmsNode')
+  //todo: delete fmsNode in evt.feature.getGeometry().get('fmsNode') ?
+  evt.feature.set('fmsNode', fmsNode)
+  evt.feature.set('fmsLaneType', 'fmsNode')
+})
+
+const getLaneSectionsStyle = function(feature) {
+  const styles = [defaultStyle];
+  if(!feature) {
+    return styles;
+  }
+
+  if (feature.getGeometry().getType() === 'GeometryCollection') {
+    const geometries = feature.getGeometry().getGeometries();
+    const centerLineGeom = geometries[PtclJSON.CenterLineIx];
+    const centerLineCoords = centerLineGeom.getCoordinates();
+    const centerLineLength = centerLineCoords.length;
+    if (centerLineLength > 0) {
+      const firstCoord = centerLineCoords[0];
+      const lastCoord = centerLineCoords[centerLineLength - 1];
+      styles.push(new Style({
+        geometry: new Point(firstCoord),
+        image: new Icon({
+          src: 'images/first.svg',
+          anchor: [0.5, 0.5],
+          scale: 0.5
+        })
+      }));
+      styles.push(new Style({
+        geometry: new Point(lastCoord),
+        image: new Icon({
+          src: 'images/last.svg',
+          anchor: [0.5, 0.5],
+          scale: 0.5
+        })
+      }));
+    }
+  }
+  return styles;
+}
+
+const addLaneSectionsDraw = new Draw({
+  type: 'LineString',
+  source: addLaneSectionSource,
+  // geometryFunction: drawLaneSectionsGeomFn,
+  style: getLaneSectionsStyle
+})
+
+
 /**
  * Draw geometryCollection, when drawend, create features from geometryCollection and
  * add them to respective ribsSource, centerLineSource, boundarySource
@@ -694,8 +929,37 @@ const geometryFunctionFmsLane = function(coordinates, geometry, proj, d) {
 const drawFmsLane = new Draw({
   type: 'LineString',
   source: drawSource,
-  geometryFunction: geometryFunctionFmsLane,
-  style: getRibsRotationStyle
+  geometryFunction: drawFmsLaneGeomFn,
+  // style: getRibsRotationStyle
+});
+
+addLaneSectionsDraw.on('drawstart', (evt) => {
+  evt.feature.set('fmsPathSectionId', uuidv4())
+  evt.feature.set('fmsLaneType', 'pathSection')
+  const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
+  if (snappedFmsNodeFeatures.length === 0) {
+    throw Error('no fmsNode found at drawstart')
+  }
+  const fmsNode = snappedFmsNodeFeatures[0].get('fmsNode')
+  evt.feature.set('startFmsNode', fmsNode)
+});
+
+addLaneSectionsDraw.on('drawend', (evt) => {
+  const fmsPathSectionId = evt.feature.get('fmsPathSectionId')
+
+  const endFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
+  if (endFmsNodeFeatures.length === 0) {
+    throw Error('no fmsNode found at drawend')
+  }
+  const endFmsNode = endFmsNodeFeatures[0].get('fmsNode')
+  endFmsNode.prevSectionsId.push(fmsPathSectionId)
+
+  const startFmsNode = evt.feature.get('startFmsNode')
+  startFmsNode.nextSectionsId.push(fmsPathSectionId)
+
+  evt.feature.set('startFmsNode', startFmsNode)
+  evt.feature.set('endFmsNode', endFmsNode)
+  console.log('drawend fmsNode', evt)
 });
 
 drawFmsLane.on('drawstart', (evt) => {
@@ -808,7 +1072,8 @@ drawFmsLane.on('drawend', (evt) => {
   }, 0)
 });
 
-map.addInteraction(drawFmsLane);
+// map.addInteraction(drawFmsLane);
+map.addInteraction(addNodes);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
 // map.addInteraction(centerLineSnap);
@@ -820,28 +1085,43 @@ map.addInteraction(ptclSnap)
 const typeSelect = document.getElementById('type');
 typeSelect.onchange = function () {
   let value = typeSelect.value;
-  if (value === 'Draw') {
-    map.addInteraction(drawFmsLane);
-    map.addInteraction(snap);
-    // map.addInteraction(centerLineSnap);
-    map.removeInteraction(select);
-    map.removeInteraction(modifyRibs);
+  switch (value) {
+    case 'draw':
+      map.addInteraction(drawFmsLane);
+      map.addInteraction(snap);
+      // map.addInteraction(centerLineSnap);
+      map.removeInteraction(select);
+      map.removeInteraction(modifyRibs);
+      break;
+    case 'add-nodes':
+      map.removeInteraction(drawFmsLane);
+      map.addInteraction(addNodes)
+      modifyDelete = false
+      break;
+    case 'add-lane-sections':
+      map.removeInteraction(drawFmsLane);
+      map.removeInteraction(addNodes)
+      map.addInteraction(addLaneSectionsDraw)
+      map.addInteraction(addNodesSnap)
+      modifyDelete = false
+      break;
 
-  } else {
-    map.removeInteraction(drawFmsLane);
-
-    map.addInteraction(select);
-    modifyDelete = false
-    if (value === 'Modify - Ribs') {
+    case 'modify-ribs':
+      map.removeInteraction(drawFmsLane);
+      map.addInteraction(select);
+      modifyDelete = false
       modifyType = 'ribs'
-    } else if (value === 'Delete - Ribs') {
+      break;
+    case 'delete-ribs':
       modifyType = 'ribs'
       modifyDelete = true
-    } else if (value === 'Modify - CenterLine') {
+      break;
+    case 'modify-centerLine':
       modifyType = 'centerLine'
-    }
+      break;
   }
 };
+
 const laneWidthInput = document.getElementById('lane-width');
 halfLaneWidthMeter = laneWidthInput.value / 2
 laneWidthInput.onchange = function () {
