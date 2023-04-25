@@ -64,38 +64,48 @@ const PathSectionEndWeightMeter = 10;
 
 let showDirectionArrow = false;
 const getDirectionArrowStyle = function(feature) {
-  const styles = [
-    // linestring
-    new Style({
-      stroke: new Stroke({
-        color: 'red',
-        width: 2
-      })
+  const styles = [];
+  const centerLineStyle = new Style({
+    stroke: new Stroke({
+      color: '#33ff4e',
     })
-  ];
+  })
+  styles.push(centerLineStyle);
   if (!showDirectionArrow) {
     return styles;
   }
-  const geometry = feature.getGeometry();
+  const centerLine = feature.getGeometry();
 
-  geometry.forEachSegment(function(start, end, c, d) {
-    console.log(c, d)
-    var dx = end[0] - start[0];
-    var dy = end[1] - start[1];
-    var rotation = Math.atan2(dy, dx);
-
-    styles.push(new Style({
-      geometry: new Point(end),
-      image: new RegularShape({
-        fill: new Fill({color: '#000'}),
-        points: 3,
+  const midPointIx = Math.floor(centerLine.getCoordinates().length / 2)
+  const midPointCoord = centerLine.getCoordinates()[midPointIx];
+  styles.push(new Style({
+      geometry: new Point(midPointCoord),
+      image: new CircleStyle({
         radius: 8,
-        rotation: -rotation,
-        angle: Math.PI / 2 // rotate 90°
+        fill: new Fill({
+          color: '#4eff33',
+        })
       })
-    }));
-  });
+    })
+  )
 
+  const prevIx = midPointIx - 1;
+  const prevCoord = centerLine.getCoordinates()[prevIx];
+  const dx = midPointCoord[0] - prevCoord[0];
+  const dy = midPointCoord[1] - prevCoord[1];
+  const rotation = Math.atan2(dy, dx);
+  styles.push(new Style({
+    geometry: new Point(midPointCoord),
+    image: new RegularShape({
+      fill: new Fill({
+        color: '#050505'
+      }),
+      points: 3,
+      radius: 8,
+      rotation: -rotation,
+      angle: Math.PI / 2 // rotate 90°
+    })
+  }))
   return styles;
 };
 
@@ -253,7 +263,7 @@ const boundaryLayer = new VectorLayer({
 
     return new Style({
       stroke: new Stroke({
-        color: 'yellow',
+        color: 'rgb(138,133,133)',
         width: 2,
       }),
     })
@@ -281,58 +291,6 @@ const addLaneSectionLayer = new VectorLayer({
     })
   })
   // style: getRibsRotationStyle
-});
-
-const bezierSource = new VectorSource();
-const bezierLayer = new VectorLayer({
-  source: bezierSource,
-  style: function(feature) {
-    const styles = [];
-    const centerLineStyle = new Style({
-      stroke: new Stroke({
-        color: '#33ff4e',
-      })
-    })
-    styles.push(centerLineStyle);
-
-    if(feature.getGeometry().getType() !== 'GeometryCollection') {
-      throw Error('GeometryCollection expected');
-    }
-    const geometries = feature.getGeometry().getGeometries();
-    const centerLine = geometries[0];
-
-    const midPointIx = Math.floor(centerLine.getCoordinates().length / 2)
-    const midPointCoord = centerLine.getCoordinates()[midPointIx];
-    styles.push(new Style({
-      geometry: new Point(midPointCoord),
-      image: new CircleStyle({
-        radius: 8,
-        fill: new Fill({
-          color: '#4eff33',
-        })
-      })
-      })
-    )
-
-    const prevIx = midPointIx - 1;
-    const prevCoord = centerLine.getCoordinates()[prevIx];
-    const dx = midPointCoord[0] - prevCoord[0];
-    const dy = midPointCoord[1] - prevCoord[1];
-    const rotation = Math.atan2(dy, dx);
-    styles.push(new Style({
-      geometry: new Point(midPointCoord),
-      image: new RegularShape({
-        fill: new Fill({
-          color: '#050505'
-        }),
-        points: 3,
-        radius: 8,
-        rotation: -rotation,
-        angle: Math.PI / 2 // rotate 90°
-      })
-    }))
-    return styles;
-  }
 });
 
 // const ptclSource = new VectorSource({
@@ -421,7 +379,7 @@ closer.onclick = function () {
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer, bezierLayer],
+  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer],
   overlays: [overlay],
   target: 'map',
   view: new View({
@@ -451,11 +409,21 @@ map.on('loadend', function () {
 const setFmsNodeRotation = () => {
   const fmsNodeId = document.getElementById('fms-node-id').value;
   const referenceHeadingDegree = document.getElementById('fms-node-heading').value;
-  const referenceHeadingRad = parseFloat(referenceHeadingDegree)
   fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).referenceHeading = referenceHeadingDegree;
   redrawFmsNodes(fmsNodeId)
 }
 window.setFmsNodeRotation = setFmsNodeRotation.bind(this);
+
+const setFmsLaneSectionWeights = () => {
+  const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
+  const startWeight = document.getElementById('fms-lane-section-start-weight').value;
+  const endWeight = document.getElementById('fms-lane-section-end-weight').value;
+  const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId);
+  fmsLaneSection.startWeight = parseFloat(startWeight);
+  fmsLaneSection.endWeight = parseFloat(endWeight);
+  redrawFmsLaneSections(fmsLaneSectionId)
+}
+window.setFmsLaneSectionWeights = setFmsLaneSectionWeights.bind(this);
 
 map.on('contextmenu', (evt) => {
   console.log('contextmenu', evt)
@@ -472,11 +440,33 @@ map.on('contextmenu', (evt) => {
 
     const innerHTML = `
     <div>
-      <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled>${fmsNode.id}</input></p>
+      <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled></p>
       <p>Rotation: <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
       <p>Width: <input disabled type='text' value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'</p>
       <p>Prev Sections: ${fmsNode.prevSectionsId.join(",")} </p>
       <button onclick="window.setFmsNodeRotation()">Set</button>
+    </div>    `
+
+    content.innerHTML = innerHTML;
+  }
+  else if(modifyType === 'modify-lane-sections') {
+    const coordinate = evt.coordinate;
+    overlay.setPosition(coordinate);
+
+    const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.pixel).filter(feat => feat.get('fmsLaneType') === 'centerLine');
+    if (snappedFmsNodeFeatures.length === 0) {
+      throw Error('no fmsNode found at drawstart')
+    }
+    const fmsLaneSection = snappedFmsNodeFeatures[0].get('fmsLaneSection')
+
+    debugger
+    const innerHTML = `
+    <div>
+      <p>Lane: <input type='text' id='fms-lane-section-id' value='${fmsLaneSection.id}' disabled></p>
+      <p>Start Weight: <input id='fms-lane-section-start-weight' type='text' value='${fmsLaneSection.startWeight}'></p>
+      <p>End Weight: <input id='fms-lane-section-end-weight' type='text' value='${fmsLaneSection.endWeight}'></p>
+
+      <button onclick="window.setFmsLaneSectionWeights()">Set</button>
     </div>    `
 
     content.innerHTML = innerHTML;
@@ -645,6 +635,47 @@ const redrawFmsNodes = (fmsNodeId) => {
   fmsNodeFeature.setGeometry(fmsNodeGeomCol)
 }
 
+const redrawFmsLaneSections = (fmsLaneSectionId) => {
+  debugger
+  const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
+  const startFmsNode = fmsLaneSection.startFmsNode
+  const endFmsNode = fmsLaneSection.endFmsNode
+
+  const xUnitVec = new p5.Vector(1, 0)
+
+  const bezierPt1 = startFmsNode.referencePoint
+  const pt2 = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
+  const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+  const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+  const bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
+
+  const pt3 = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
+  const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+  const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+  const bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
+
+  const bezierPt4 = endFmsNode.referencePoint
+
+  const bezier = new Bezier(
+    bezierPt1.x, bezierPt1.y,
+    bezierPt2.x, bezierPt2.y,
+    bezierPt3.x, bezierPt3.y,
+    bezierPt4.x, bezierPt4.y);
+
+  const bezierSteps = 24
+
+  const luts = bezier.getLUT(bezierSteps).map(lut => [lut.x, lut.y])
+  console.log('luts', luts.length, luts)
+
+  const centerLine = new LineString(luts)
+  centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
+
+  //todo: redraw ribs
+
+  // const fmsLaneSectionFeature = addLaneSectionsSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId)
+  // const fmsLaneSectionGeomCol = getFmsLaneSectionsGeomCol(fmsLaneSection)
+  // fmsLaneSectionFeature.setGeometry(fmsLaneSectionGeomCol)
+}
 const redrawPathSection = function(pathSectionId, redrawFlags) {
   const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
   const ribsCoords = []
@@ -820,23 +851,23 @@ const getNodesStyle = function(feature) {
   return styles;
 }
 
-const modifyNodes = new Modify({
-  source: addNodesSource,
-  // style: getNodesStyle
-})
-modifyNodes.on('modifystart', (evt) => {
-  event.features.forEach(function (feature) {
-    feature.set(
-      'modifyGeometry',
-      {geometry: feature.getGeometry().clone()},
-      true
-    );
-  });
-})
-
-modifyNodes.on('modifyend', (evt) => {
-  console.log('modifyend', evt)
-})
+// const modifyNodes = new Modify({
+//   source: addNodesSource,
+//   // style: getNodesStyle
+// })
+// modifyNodes.on('modifystart', (evt) => {
+//   event.features.forEach(function (feature) {
+//     feature.set(
+//       'modifyGeometry',
+//       {geometry: feature.getGeometry().clone()},
+//       true
+//     );
+//   });
+// })
+//
+// modifyNodes.on('modifyend', (evt) => {
+//   console.log('modifyend', evt)
+// })
 
 const addNodes = new Draw({
   type: 'Point',
@@ -895,15 +926,14 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   // evt.feature.set('startFmsNode', startFmsNode)
   // evt.feature.set('endFmsNode', endFmsNode)
-  const laneSection = {
+  const fmsLaneSection = {
     id: fmsPathSectionId,
     startFmsNode: startFmsNode,
     endFmsNode: endFmsNode,
     startWeight: PathSectionStartWeightMeter,
     endWeight: PathSectionEndWeightMeter,
   }
-  fmsLaneSections.push(laneSection)
-  // evt.feature.set('laneSection', laneSection)
+  fmsLaneSections.push(fmsLaneSection)
 
   const xUnitVec = new p5.Vector(1, 0)
 
@@ -927,7 +957,10 @@ addLaneSectionsDraw.on('drawend', (evt) => {
     bezierPt3.x, bezierPt3.y,
     bezierPt4.x, bezierPt4.y);
 
-  const luts = bezier.getLUT(16).map(lut => [lut.x, lut.y])
+  const bezierSteps = 24
+
+  const luts = bezier.getLUT(bezierSteps).map(lut => [lut.x, lut.y])
+  console.log('luts', luts.length, luts)
 
   const centerLine = new LineString(luts)
   const centerLineFeature = new Feature({
@@ -935,7 +968,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   })
   centerLineFeature.set('fmsLaneType', 'centerLine')
   centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
-  centerLineFeature.set('laneSection', laneSection)
+  centerLineFeature.set('fmsLaneSection', fmsLaneSection)
   centerLineSource.addFeature(centerLineFeature)
 
   const centerLineCoords = luts;
@@ -950,6 +983,16 @@ addLaneSectionsDraw.on('drawend', (evt) => {
     let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
     let cur = new p5.Vector(curCoord[0], curCoord[1])
     let direction = p5.Vector.sub(cur, prev)
+
+    if (i === 1) {
+      let xUnitVec = new p5.Vector(1, 0)
+      direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+    }
+    else if(i === centerLineCoords.length - 1) {
+      let xUnitVec = new p5.Vector(1, 0)
+      direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+    }
+
     if (direction.mag() === 0) {
       continue;
     }
@@ -1033,7 +1076,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   })
   ribsFeature.set('fmsLaneType', 'ribs')
   ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
-  ribsFeature.set('laneSection', laneSection)
+  ribsFeature.set('fmsLaneSection', fmsLaneSection)
   ribsSource.addFeature(ribsFeature)
 
   const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
@@ -1042,7 +1085,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   })
   boundaryFeature.set('fmsLaneType', 'boundary')
   boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
-  boundaryFeature.set('laneSection', laneSection)
+  boundaryFeature.set('fmsLaneSection', fmsLaneSection)
   boundarySource.addFeature(boundaryFeature)
 
   setTimeout(() => {
@@ -1073,12 +1116,12 @@ typeSelect.onchange = function () {
       modifyType = 'modify-nodes'
       map.removeInteraction(addNodes);
       map.removeInteraction(addLaneSectionsDraw);
-      map.addInteraction(modifyNodes)
+      // map.addInteraction(modifyNodes)
       modifyDelete = false
       break;
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
-      map.removeInteraction(modifyNodes)
+      // map.removeInteraction(modifyNodes)
       map.addInteraction(addLaneSectionsDraw)
       map.addInteraction(addNodesSnap)
       modifyDelete = false
@@ -1087,7 +1130,8 @@ typeSelect.onchange = function () {
       modifyType = 'modify-lane-sections'
       map.removeInteraction(addNodes)
       map.removeInteraction(addLaneSectionsDraw)
-      map.addInteraction(addNodesSnap)
+      // map.addInteraction(modifyLaneSections)
+      map.addInteraction(centerLineSnap)
       modifyDelete = false
       break;
   }
