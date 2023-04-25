@@ -1,0 +1,50 @@
+---
+layout: example.html
+title: PtclJSON
+shortdesc: Demonstrates rendering of features from a TopoJSON topology.
+docs: >
+  This example uses a vector layer with `ol/format/TopoJSON` for rendering features from [TopoJSON](https://github.com/mbostock/topojson/wiki).
+tags: "PtclJSON, vector, style"
+cloak:
+  - key: get_your_own_D6rA4zTHduk6KOKTXzGB
+    value: Get your own API key at https://www.maptiler.com/cloud/
+resources:
+  - https://cdn.jsdelivr.net/npm/jsts@2.9.3/dist/jsts.min.js
+  - http://localhost:8080/p5.js
+  - http://localhost:8080/turf.min.js
+---
+<div>
+  <div>
+    <label>Control type</label>
+    <select id="type">
+      <option value="draw">Draw</option>
+      <option value="add-nodes" selected>Add Nodes</option>
+      <option value="modify-nodes">Modify Nodes</option>
+      <option value="add-lane-sections">Add Lane Sections</option>
+      <option value="modify-ribs">Modify Ribs</option>
+      <option value="delete-ribs">Delete Ribs</option>
+      <option value="modify-centerLine">Modify CenterLine</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="lane-width">Lane Width</label>
+    <input type="text" id="lane-width" name="lane-width" value="17">
+  </div>
+
+  <div>
+    <input type="checkbox" id="direction-arrow" name="direction-arrow" value="direction-arrow">
+    <label for="direction-arrow">Show Direction Arrow</label><br>
+    <input type="checkbox" id="center-line" name="center-line" value="center-line">
+    <label for="center-line">Show Center Line</label><br>
+  </div>
+</div>
+<div>
+
+</div>
+<div id="popup" class="ol-popup">
+  <a href="#" id="popup-closer" class="ol-popup-closer"></a>
+  <div id="popup-content"></div>
+</div>
+<div id="map" class="map"></div>
+

@@ -451,10 +451,11 @@ map.on('loadend', function () {
 
 const setFmsNodeRotation = () => {
   const fmsNodeId = document.getElementById('fms-node-id').value;
-  const referenceHeadingDegree = document.getElementById('fms-node-heading').value;
-  const referenceHeadingRad = parseFloat(referenceHeadingDegree)
-  fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).referenceHeading = referenceHeadingDegree;
-  redrawFmsNodes(fmsNodeId)
+  const headingDegree = document.getElementById('fms-node-heading').value;
+  const headingRad = toRadians(parseFloat(headingDegree))
+  console.log('setFmsNodeRotation', fmsNodes, fmsNodeId, headingDegree, headingRad)
+  fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).heading = headingRad;
+  console.log('setFmsNodeRotation', fmsNodes, fmsNodeId, headingDegree, headingRad)
 }
 window.setFmsNodeRotation = setFmsNodeRotation.bind(this);
 
@@ -637,15 +638,6 @@ select.on('select', function (e) {
 
 let useBezier = true
 
-const redrawFmsNodes = (fmsNodeId) => {
-  const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
-  // const fmsNodeGeom = new Point([fmsNode.x, fmsNode.y])
-  debugger
-  const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
-  const fmsNodeGeom = drawFmsNodesGeom(fmsNode)
-  const geomCol = fmsNodeFeature.setGeometry(fmsNodeGeom)
-}
-
 const redrawPathSection = function(pathSectionId, redrawFlags) {
   const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
   const ribsCoords = []
@@ -672,78 +664,20 @@ const redrawPathSection = function(pathSectionId, redrawFlags) {
   }
 }
 
-const drawFmsNodesGeom = function(fmsNode) {
-  const CenterPointIx = 0;
-  const LeftRightPointIx = 1;
-  const RibIx = 2;
-
-  const coordinates = [fmsNode.referencePoint.x, fmsNode.referencePoint.y];
-  const geometry = new GeometryCollection([
-    new Point(coordinates), //center
-    new MultiPoint([]),   //left-right
-    new LineString([]) //rib
-  ]);
-
-  const geometries = geometry.getGeometries();
-
-  const curCoord = coordinates
-
-  let cur = new p5.Vector(curCoord[0], curCoord[1])
-  let direction = new p5.Vector(1, 0)
-  // normalize to 1 meter
-  let directionNorm = p5.Vector.normalize(direction)
-  directionNorm = p5.Vector.rotate(directionNorm, toRadians(fmsNode.referenceHeading))
-
-  // multiply to get half lane width
-  let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
-
-  let prevCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
-  let leftRib = new LineString(
-    [
-      curCoord,
-      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-    ]);
-  leftRib.rotate(Math.PI / 2.0, curCoord);
-  let rightRib = new LineString(
-    [
-      curCoord,
-      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-    ])
-  rightRib.rotate(-Math.PI / 2.0, curCoord);
-
-  let ribLineString = new LineString(
-    [
-      leftRib.getCoordinates()[1],
-      curCoord,
-      rightRib.getCoordinates()[1]
-    ]
-  )
-  geometries[RibIx].setCoordinates(ribLineString.getCoordinates());
-  //need to do 'setGeometries', simple assignment won't work
-  geometry.setGeometries(geometries);
-
-  let first = ribLineString.getCoordinates()[0];
-  let last = ribLineString.getCoordinates()[2];
-
-  let v1 = new p5.Vector(first[0], first[1]);
-  let v2 = new p5.Vector(last[0], last[1]);
-  let dirVec = p5.Vector.sub(v2, v1)
-  let rotationFromNorth = dirVec.heading()
-  let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
-
-  return geometry;
-}
 /**
  * Draw a node, consisting 1 centerPoint, 1 linestring/rib, 2 left-right points
  * @param coordinates
  * @param geometry
  * @returns {*|GeometryCollection}
  */
-const addNodesGeomFn = function(coordinates, geometry) {
-  const CenterPointIx = 0;
-  const LeftRightPointIx = 1;
-  const RibIx = 2;
+const CenterPointIx = 0;
+const LeftRightPointIx = 1;
+const RibIx = 2;
 
+const drawNodesGeomFn = function(coordinates, geometry) {
+  console.log('drawNodesGeomFn', coordinates, geometry)
+  let currentIx = coordinates.length-1;
+  // if (!geometry) {
   geometry = new GeometryCollection([
     new Point(coordinates), //center
     new MultiPoint([]),   //left-right
@@ -1042,14 +976,13 @@ modifyNodes.on('modifyend', (evt) => {
 const addNodes = new Draw({
   type: 'Point',
   source: addNodesSource,
-  geometryFunction: addNodesGeomFn,
+  geometryFunction: drawNodesGeomFn,
   style: getNodesStyle
 })
 
 addNodes.on('drawend', function(evt) {
   const fmsNode = evt.feature.getGeometry().get('fmsNode')
   //todo: delete fmsNode in evt.feature.getGeometry().get('fmsNode') ?
-  evt.feature.set('fmsNodeId', fmsNode.id)
   evt.feature.set('fmsNode', fmsNode)
   evt.feature.set('fmsLaneType', 'fmsNode')
 })
@@ -1362,6 +1295,14 @@ const typeSelect = document.getElementById('type');
 typeSelect.onchange = function () {
   let value = typeSelect.value;
   switch (value) {
+    case 'draw':
+
+      map.addInteraction(drawFmsLane);
+      map.addInteraction(snap);
+      // map.addInteraction(centerLineSnap);
+      map.removeInteraction(select);
+      map.removeInteraction(modifyRibs);
+      break;
     case 'add-nodes':
       map.removeInteraction(drawFmsLane);
       map.removeInteraction(addLaneSectionsDraw);
@@ -1370,6 +1311,7 @@ typeSelect.onchange = function () {
       break;
     case 'modify-nodes':
       modifyType = 'modify-nodes'
+
       map.removeInteraction(drawFmsLane);
       map.removeInteraction(addNodes);
       map.removeInteraction(addLaneSectionsDraw);
@@ -1382,6 +1324,20 @@ typeSelect.onchange = function () {
       map.addInteraction(addLaneSectionsDraw)
       map.addInteraction(addNodesSnap)
       modifyDelete = false
+      break;
+
+    case 'modify-ribs':
+      map.removeInteraction(drawFmsLane);
+      map.addInteraction(select);
+      modifyDelete = false
+      modifyType = 'ribs'
+      break;
+    case 'delete-ribs':
+      modifyType = 'ribs'
+      modifyDelete = true
+      break;
+    case 'modify-centerLine':
+      modifyType = 'centerLine'
       break;
   }
 };
