@@ -334,8 +334,6 @@ const bezierLayer = new VectorLayer({
   }
 });
 
-
-
 // const ptclSource = new VectorSource({
 //   url: 'HazelmerePathSectionsOnlyPtcl.json',
 //   format: new PtclJSON({
@@ -642,8 +640,8 @@ const redrawFmsNodes = (fmsNodeId) => {
   // const fmsNodeGeom = new Point([fmsNode.x, fmsNode.y])
   debugger
   const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
-  const fmsNodeGeom = drawFmsNodesGeom(fmsNode)
-  const geomCol = fmsNodeFeature.setGeometry(fmsNodeGeom)
+  const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
+  fmsNodeFeature.setGeometry(fmsNodeGeomCol)
 }
 
 const redrawPathSection = function(pathSectionId, redrawFlags) {
@@ -672,12 +670,11 @@ const redrawPathSection = function(pathSectionId, redrawFlags) {
   }
 }
 
-const drawFmsNodesGeom = function(fmsNode) {
+const createNodesGeomCol = function(coordinates, options) {
   const CenterPointIx = 0;
   const LeftRightPointIx = 1;
   const RibIx = 2;
 
-  const coordinates = [fmsNode.referencePoint.x, fmsNode.referencePoint.y];
   const geometry = new GeometryCollection([
     new Point(coordinates), //center
     new MultiPoint([]),   //left-right
@@ -692,10 +689,9 @@ const drawFmsNodesGeom = function(fmsNode) {
   let direction = new p5.Vector(1, 0)
   // normalize to 1 meter
   let directionNorm = p5.Vector.normalize(direction)
-  directionNorm = p5.Vector.rotate(directionNorm, toRadians(fmsNode.referenceHeading))
+  directionNorm = p5.Vector.rotate(directionNorm, toRadians(options.referenceHeading))
 
-  // multiply to get half lane width
-  let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
+  let directionLaneWidth = p5.Vector.mult(directionNorm, options.laneWidth)
 
   let prevCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
   let leftRib = new LineString(
@@ -722,14 +718,15 @@ const drawFmsNodesGeom = function(fmsNode) {
   //need to do 'setGeometries', simple assignment won't work
   geometry.setGeometries(geometries);
 
-  let first = ribLineString.getCoordinates()[0];
-  let last = ribLineString.getCoordinates()[2];
+  return geometry
+}
 
-  let v1 = new p5.Vector(first[0], first[1]);
-  let v2 = new p5.Vector(last[0], last[1]);
-  let dirVec = p5.Vector.sub(v2, v1)
-  let rotationFromNorth = dirVec.heading()
-  let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
+const getFmsNodesGeomCol = function(fmsNode) {
+  const coordinates = [fmsNode.referencePoint.x, fmsNode.referencePoint.y];
+  const geometry = createNodesGeomCol(coordinates, {
+    referenceHeading: fmsNode.referenceHeading,
+    laneWidth: fmsNode.leftEdge.distanceFromReferencePoint
+  })
 
   return geometry;
 }
@@ -740,65 +737,15 @@ const drawFmsNodesGeom = function(fmsNode) {
  * @returns {*|GeometryCollection}
  */
 const addNodesGeomFn = function(coordinates, geometry) {
-  const CenterPointIx = 0;
-  const LeftRightPointIx = 1;
-  const RibIx = 2;
-
-  geometry = new GeometryCollection([
-    new Point(coordinates), //center
-    new MultiPoint([]),   //left-right
-    new LineString([]) //rib
-  ]);
-
-  const geometries = geometry.getGeometries();
-
-  const curCoord = coordinates
-
-  let cur = new p5.Vector(curCoord[0], curCoord[1])
-  let direction = new p5.Vector(1, 0)
-  // normalize to 1 meter
-  let directionNorm = p5.Vector.normalize(direction)
-  // multiply to get half lane width
-  let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
-
-  let prevCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
-  let leftRib = new LineString(
-    [
-      curCoord,
-      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-    ]);
-  leftRib.rotate(Math.PI / 2.0, curCoord);
-  let rightRib = new LineString(
-    [
-      curCoord,
-      [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-    ])
-  rightRib.rotate(-Math.PI / 2.0, curCoord);
-
-  let ribLineString = new LineString(
-    [
-      leftRib.getCoordinates()[1],
-      curCoord,
-      rightRib.getCoordinates()[1]
-    ]
-  )
-  geometries[RibIx].setCoordinates(ribLineString.getCoordinates());
-  //need to do 'setGeometries', simple assignment won't work
-  geometry.setGeometries(geometries);
-
-  let first = ribLineString.getCoordinates()[0];
-  let last = ribLineString.getCoordinates()[2];
-
-  let v1 = new p5.Vector(first[0], first[1]);
-  let v2 = new p5.Vector(last[0], last[1]);
-  let dirVec = p5.Vector.sub(v2, v1)
-  let rotationFromNorth = dirVec.heading()
-  let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
+  geometry = createNodesGeomCol(coordinates, {
+    referenceHeading: 0,
+    laneWidth: halfLaneWidthMeter
+  })
 
   let fmsNode = {
     id: uuidv4(),
-    referencePoint: { x: curCoord[0], y: curCoord[1] },
-    referenceHeading: rotationFromEast,
+    referencePoint: { x: coordinates[0], y: coordinates[1] },
+    referenceHeading: 0,
     leftEdge: {
       distanceFromReferencePoint: halfLaneWidthMeter,
     },
@@ -810,155 +757,6 @@ const addNodesGeomFn = function(coordinates, geometry) {
   }
   geometry.set('fmsNode', fmsNode);
   fmsNodes.push(fmsNode);
-  return geometry;
-}
-
-const drawFmsLaneGeomFn = function(coordinates, geometry, proj, d) {
-  let currentIx = coordinates.length-1;
-  if (!geometry) {
-    geometry = new GeometryCollection([
-      new Polygon([]), // boundary
-      new MultiLineString([[]]),
-      new LineString(coordinates)
-    ]);
-    return geometry;
-  }
-  if(currentIx === 0) {
-    return geometry;
-  }
-  const geometries = geometry.getGeometries();
-
-  let lineString1;
-  if (useBezier) {
-    const line = {
-      "type": "Feature",
-      "properties": {},
-      "geometry": {
-        "type": "LineString",
-        "coordinates": coordinates
-      }
-    };
-    const curved = bezier(line, {resolution: 5000});
-    const coordsCurve = curved['geometry']['coordinates'];
-    lineString1 = new LineString(coordsCurve);
-    if(currentIx >= 3) {
-      const bez = new Bezier(
-        coordinates[currentIx-3][0],
-        coordinates[currentIx-3][1],
-        coordinates[currentIx-2][0],
-        coordinates[currentIx-2][1],
-        coordinates[currentIx-1][0],
-        coordinates[currentIx-1][1],
-        coordinates[currentIx][0],
-        coordinates[currentIx][1]);
-      const luts = bez.getLUT(32).map(lut => [lut.x, lut.y])
-      console.log('bez', bez, luts)
-
-      lineString1 = new LineString(luts);
-
-    }
-  }
-  else {
-    lineString1 = new LineString(coordinates);
-  }
-
-  const centerLineCoords = lineString1.getCoordinates();
-  geometries[PtclJSON.CenterLineIx].setCoordinates(centerLineCoords);
-  geometries[PtclJSON.RibsIx] = new MultiLineString([[]]);
-
-  const pathSection = {
-    elements: []
-  }
-
-  for (let i = 1; i < centerLineCoords.length; i++) {
-    const curCoord = centerLineCoords[i]
-    const prevCoord = centerLineCoords[i-1]
-    let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
-    let cur = new p5.Vector(curCoord[0], curCoord[1])
-    let direction = p5.Vector.sub(cur, prev)
-    if (direction.mag() === 0) {
-      continue;
-    }
-
-    // normalize to 1 meter
-    let directionNorm = p5.Vector.normalize(direction)
-    // multiply to get half lane width
-    let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
-    // translate back to prevCoord
-    let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
-    let leftRib = new LineString(
-        [
-          prevCoord,
-          [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-        ]);
-    leftRib.rotate(Math.PI / 2.0, prevCoord);
-
-    let rightRib = new LineString(
-      [
-        prevCoord,
-        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-      ]);
-    rightRib.rotate(-Math.PI / 2.0, prevCoord);
-
-    let ribLineString = new LineString(
-      [
-        leftRib.getCoordinates()[1],
-        prevCoord,
-        rightRib.getCoordinates()[1]
-      ]
-    )
-    let first = ribLineString.getCoordinates()[0];
-    let last = ribLineString.getCoordinates()[2];
-
-    let v1 = new p5.Vector(first[0], first[1]);
-    let v2 = new p5.Vector(last[0], last[1]);
-    let dirVec = p5.Vector.sub(v2, v1)
-    let rotationFromNorth = dirVec.heading()
-    let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
-
-    let pathSectionElement = {
-      id: uuidv4(),
-      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
-      referenceHeading: rotationFromEast,
-      referenceHeadingUnit: 'rad',
-      leftEdge: {
-        distanceFromReferencePoint: halfLaneWidthMeter,
-      },
-      rightEdge: {
-        distanceFromReferencePoint: halfLaneWidthMeter,
-      }
-    }
-    pathSection.elements.push(pathSectionElement);
-
-    if (i === centerLineCoords.length - 1) {
-      let lastPathSectionElement = {
-        id: uuidv4(),
-        referencePoint: { x: curCoord[0], y: curCoord[1] },
-        referenceHeading: rotationFromEast,
-        referenceHeadingUnit: 'rad',
-        leftEdge: {
-          distanceFromReferencePoint: halfLaneWidthMeter,
-        },
-        rightEdge: {
-          distanceFromReferencePoint: halfLaneWidthMeter,
-        }
-      }
-      pathSection.elements.push(lastPathSectionElement);
-    }
-  }
-  const ribsCoords = []
-  geometry.set('pathSection', pathSection);
-  for (let i = 0; i < pathSection.elements.length; i++) {
-    const pathSectionElem = pathSection.elements[i]
-    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
-    ribsCoords.push(ribCoords)
-  }
-  const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
-  ribsGeom.getLineStrings().forEach(ls => geometries[PtclJSON.RibsIx].appendLineString(ls))
-
-  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-  geometries[PtclJSON.BoundaryIx].setCoordinates(boundaryGeom.getCoordinates());
-  geometry.setGeometries(geometries);
   return geometry;
 }
 
@@ -1068,8 +866,6 @@ const addLaneSectionsDraw = new Draw({
   // geometryFunction: drawLaneSectionsGeomFn,
   style: getLaneSectionsStyle
 })
-
-
 
 addLaneSectionsDraw.on('drawstart', (evt) => {
   evt.feature.set('fmsPathSectionId', uuidv4())
@@ -1227,132 +1023,9 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   bezierSource.addFeature(newFeat)
 });
 
-/**
- * Draw geometryCollection, when drawend, create features from geometryCollection and
- * add them to respective ribsSource, centerLineSource, boundarySource
- */
-const drawFmsLane = new Draw({
-  type: 'LineString',
-  source: drawSource,
-  geometryFunction: drawFmsLaneGeomFn,
-  // style: getRibsRotationStyle
-});
-
-drawFmsLane.on('drawstart', (evt) => {
-  evt.feature.set('fmsPathSectionId', uuidv4())
-
-  console.log('drawstart', map.getFeaturesAtPixel(evt.target.downPx_))
-  const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
-  // const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
-  const snappedRibFeatures = featuresAtPixel.filter(feat => feat.get('fmsLaneType') === 'ribs')
-  const endRibOnlyFeatures = snappedRibFeatures.filter(feat => {
-    const ribId = feat.get('fmsRibsId')
-    return ribId > 0;
-  })
-
-  if (endRibOnlyFeatures.length === 0) {
-    return;
-  }
-
-  console.log('snappedRib', snappedRibFeatures)
-  if (snappedRibFeatures.length > 0) {
-    const coordinate = evt.target.finishCoordinate_;
-    const ribInfos = []
-
-    endRibOnlyFeatures.forEach(rib => {
-      const pathSectionId = rib.get('fmsPathSectionId')
-      const ribId = rib.get('fmsRibsId')
-
-      const ribInfo = '<code>snapped to rib ' + ribId + ' of pathSection ' + pathSectionId + '</code>';
-      ribInfos.push(ribInfo)
-    })
-    content.innerHTML = ribInfos.join('<br>')
-    overlay.setPosition(coordinate);
-
-    const pathSectionId = endRibOnlyFeatures[0].get('fmsPathSectionId')
-    const ribId = endRibOnlyFeatures[0].get('fmsRibsId')
-    console.log('rib', endRibOnlyFeatures)
-    // const rib = fmsPathSections.find(pathSec => pathSec.id === pathSectionId).elements.find(elem => elem.id === ribId)
-    evt.feature.set('fmsPrevPathSectionId', pathSectionId)
-    evt.feature.set('fmsPrevRibsId', ribId)
-  }
-})
-
-/**
- * Create new features on ribsLayer, centerLineLayer, BoundaryLayer
- * and clear drawn features to avoid confusion
- */
-drawFmsLane.on('drawend', (evt) => {
-  const fmsPrevPathSectionId =  evt.feature.get('fmsPrevPathSectionId')
-  const fmsPrevRibsId = evt.feature.get('fmsPrevRibsId')
-
-  const geomCol = evt.feature.getGeometry();
-  const pathSection = geomCol.get('pathSection')
-  pathSection.id = evt.feature.get('fmsPathSectionId')
-
-  if (fmsPrevPathSectionId != null && fmsPrevRibsId != null ) {
-    //pathSectionId and ribsId can be 0
-    const prevRib = fmsPathSections.find(pathSec => pathSec.id === fmsPrevPathSectionId).elements.find(elem => elem.id === fmsPrevRibsId);
-
-    pathSection.elements[0].referenceHeading = prevRib.referenceHeading
-    pathSection.elements[0].leftEdge.distanceFromReferencePoint = prevRib.leftEdge.distanceFromReferencePoint
-    pathSection.elements[0].rightEdge.distanceFromReferencePoint = prevRib.rightEdge.distanceFromReferencePoint
-  }
-
-  const featuresAtPixel = map.getFeaturesAtPixel(evt.target.downPx_)
-  const snappedRib = featuresAtPixel.find(feat => feat.get('fmsLaneType') === 'ribs')
-  if (snappedRib) {
-    const snapPathSectionId = snappedRib.get('fmsPathSectionId')
-    const snapRibId = snappedRib.get('fmsRibsId')
-    console.log('rib', snappedRib)
-    if (snapPathSectionId != null && snapRibId != null) {
-      const nextRib = fmsPathSections.find(pathSec => pathSec.id === snapPathSectionId).elements.find(elem => elem.id === snapRibId);
-      pathSection.elements[pathSection.elements.length-1].referenceHeading = nextRib.referenceHeading
-      pathSection.elements[pathSection.elements.length-1].leftEdge.distanceFromReferencePoint = nextRib.leftEdge.distanceFromReferencePoint
-      pathSection.elements[pathSection.elements.length-1].rightEdge.distanceFromReferencePoint = nextRib.rightEdge.distanceFromReferencePoint
-    }
-  }
-
-  fmsPathSections.push(pathSection)
-
-  const ribsCoords = []
-  let centerLineCoords = [];
-  pathSection.elements.forEach(elem => {
-    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
-    ribsCoords.push(ribCoords)
-    centerLineCoords.push(ribCoords[1])
-    const ribLineString = new LineString(ribCoords)
-    const ribFeature = new Feature(ribLineString);
-    ribFeature.set('fmsLaneType', 'ribs')
-    ribFeature.set('fmsPathSectionId', pathSection.id)
-    ribFeature.set('fmsRibsId', elem.id)
-    ribsSource.addFeature(ribFeature);
-  });
-
-  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-  const boundaryFeature = new Feature(boundaryGeom)
-  boundaryFeature.set('fmsLaneType', 'boundary')
-  boundaryFeature.set('fmsPathSectionId', pathSection.id)
-  boundarySource.addFeature(boundaryFeature)
-
-  let centerLineGeom = new LineString(centerLineCoords);
-  const centerLineFeature = new Feature(centerLineGeom)
-  centerLineFeature.set('fmsLaneType', 'centerLine')
-  centerLineFeature.set('fmsPathSectionId', pathSection.id)
-  centerLineSource.addFeature(centerLineFeature)
-
-  const vecSource = evt.target.source_;
-  setTimeout(() => {
-    //todo: investigate why setTimeout is needed, otherwise vecSource is not cleared
-    vecSource.clear()
-  }, 0)
-});
-
-// map.addInteraction(drawFmsLane);
 map.addInteraction(addNodes);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
-// map.addInteraction(centerLineSnap);
 
 /**
  * Currently user has to manually select whether to draw or modify/delete
@@ -1363,21 +1036,18 @@ typeSelect.onchange = function () {
   let value = typeSelect.value;
   switch (value) {
     case 'add-nodes':
-      map.removeInteraction(drawFmsLane);
       map.removeInteraction(addLaneSectionsDraw);
       map.addInteraction(addNodes)
       modifyDelete = false
       break;
     case 'modify-nodes':
       modifyType = 'modify-nodes'
-      map.removeInteraction(drawFmsLane);
       map.removeInteraction(addNodes);
       map.removeInteraction(addLaneSectionsDraw);
       map.addInteraction(modifyNodes)
       modifyDelete = false
       break;
     case 'add-lane-sections':
-      map.removeInteraction(drawFmsLane);
       map.removeInteraction(addNodes)
       map.addInteraction(addLaneSectionsDraw)
       map.addInteraction(addNodesSnap)
