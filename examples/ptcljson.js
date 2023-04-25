@@ -58,6 +58,7 @@ const REDRAW_BOUNDARY = 4
  */
 let fmsPathSections;
 let fmsNodes = [];
+let fmsLaneSections = [];
 const PathSectionStartWeightMeter = 10;
 const PathSectionEndWeightMeter = 10;
 
@@ -879,6 +880,7 @@ addLaneSectionsDraw.on('drawstart', (evt) => {
 });
 
 addLaneSectionsDraw.on('drawend', (evt) => {
+
   const fmsPathSectionId = evt.feature.get('fmsPathSectionId')
 
   const endFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
@@ -891,8 +893,18 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   const startFmsNode = evt.feature.get('startFmsNode')
   startFmsNode.nextSectionsId.push(fmsPathSectionId)
 
-  evt.feature.set('startFmsNode', startFmsNode)
-  evt.feature.set('endFmsNode', endFmsNode)
+  // evt.feature.set('startFmsNode', startFmsNode)
+  // evt.feature.set('endFmsNode', endFmsNode)
+  const laneSection = {
+    id: fmsPathSectionId,
+    startFmsNode: startFmsNode,
+    endFmsNode: endFmsNode,
+    startWeight: PathSectionStartWeightMeter,
+    endWeight: PathSectionEndWeightMeter,
+  }
+  fmsLaneSections.push(laneSection)
+  // evt.feature.set('laneSection', laneSection)
+
   const xUnitVec = new p5.Vector(1, 0)
 
   const bezierPt1 = startFmsNode.referencePoint
@@ -901,7 +913,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   const pt2startWeight = p5.Vector.mult(pt2direction, PathSectionStartWeightMeter)
   const bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
 
-  //todo: not sure if these calc are correct
+  //todo: not sure if these calc are ALL correct
   const pt3 = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
   const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
   const pt3endWeight = p5.Vector.mult(pt3direction, PathSectionEndWeightMeter)
@@ -909,19 +921,22 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   const bezierPt4 = endFmsNode.referencePoint
 
-  const bez = new Bezier(
+  const bezier = new Bezier(
     bezierPt1.x, bezierPt1.y,
     bezierPt2.x, bezierPt2.y,
     bezierPt3.x, bezierPt3.y,
     bezierPt4.x, bezierPt4.y);
 
-  const luts = bez.getLUT(16).map(lut => [lut.x, lut.y])
+  const luts = bezier.getLUT(16).map(lut => [lut.x, lut.y])
 
   const centerLine = new LineString(luts)
-  const geomCol = new GeometryCollection([
-    centerLine,
-    new MultiLineString([[]])
-  ])
+  const centerLineFeature = new Feature({
+    geometry: centerLine,
+  })
+  centerLineFeature.set('fmsLaneType', 'centerLine')
+  centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
+  centerLineFeature.set('laneSection', laneSection)
+  centerLineSource.addFeature(centerLineFeature)
 
   const centerLineCoords = luts;
 
@@ -1007,20 +1022,34 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   }
 
   const ribsCoords = []
-  // geometry.set('pathSection', pathSection);
   for (let i = 0; i < pathSection.elements.length; i++) {
     const pathSectionElem = pathSection.elements[i]
     const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
     ribsCoords.push(ribCoords)
   }
-  const geometries = geomCol.getGeometries()
   const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
-  ribsGeom.getLineStrings().forEach(ls => geometries[1].appendLineString(ls))
-  geomCol.setGeometries(geometries)
-  const newFeat = new Feature({
-    geometry: geomCol
+  const ribsFeature = new Feature({
+    geometry: ribsGeom
   })
-  bezierSource.addFeature(newFeat)
+  ribsFeature.set('fmsLaneType', 'ribs')
+  ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
+  ribsFeature.set('laneSection', laneSection)
+  ribsSource.addFeature(ribsFeature)
+
+  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+  const boundaryFeature = new Feature({
+    geometry: boundaryGeom
+  })
+  boundaryFeature.set('fmsLaneType', 'boundary')
+  boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
+  boundaryFeature.set('laneSection', laneSection)
+  boundarySource.addFeature(boundaryFeature)
+
+  setTimeout(() => {
+    // todo: investigate how to remove without timeout
+    addLaneSectionSource.removeFeature(evt.feature)
+  }, 0)
+
 });
 
 map.addInteraction(addNodes);
@@ -1049,7 +1078,15 @@ typeSelect.onchange = function () {
       break;
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
+      map.removeInteraction(modifyNodes)
       map.addInteraction(addLaneSectionsDraw)
+      map.addInteraction(addNodesSnap)
+      modifyDelete = false
+      break;
+    case 'modify-lane-sections':
+      modifyType = 'modify-lane-sections'
+      map.removeInteraction(addNodes)
+      map.removeInteraction(addLaneSectionsDraw)
       map.addInteraction(addNodesSnap)
       modifyDelete = false
       break;
