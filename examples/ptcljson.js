@@ -62,7 +62,7 @@ let fmsLaneSections = [];
 const PathSectionStartWeightMeter = 10;
 const PathSectionEndWeightMeter = 10;
 
-let showDirectionArrow = false;
+let showDirectionArrow = true;
 const getDirectionArrowStyle = function(feature) {
   const styles = [];
   const centerLineStyle = new Style({
@@ -409,7 +409,7 @@ map.on('loadend', function () {
 const setFmsNodeRotation = () => {
   const fmsNodeId = document.getElementById('fms-node-id').value;
   const referenceHeadingDegree = document.getElementById('fms-node-heading').value;
-  fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).referenceHeading = referenceHeadingDegree;
+  fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).referenceHeading = toRadians(referenceHeadingDegree);
   redrawFmsNodes(fmsNodeId)
 }
 window.setFmsNodeRotation = setFmsNodeRotation.bind(this);
@@ -624,15 +624,13 @@ select.on('select', function (e) {
   // map.addInteraction(centerLineSnap)
 })
 
-let useBezier = true
-
 const redrawFmsNodes = (fmsNodeId) => {
   const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
-  // const fmsNodeGeom = new Point([fmsNode.x, fmsNode.y])
-  debugger
   const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
   const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
   fmsNodeFeature.setGeometry(fmsNodeGeomCol)
+
+  //todo: redraw fmsLaneSections
 }
 
 const redrawFmsLaneSections = (fmsLaneSectionId) => {
@@ -670,11 +668,110 @@ const redrawFmsLaneSections = (fmsLaneSectionId) => {
   const centerLine = new LineString(luts)
   centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
 
-  //todo: redraw ribs
+  const centerLineCoords = luts;
 
-  // const fmsLaneSectionFeature = addLaneSectionsSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId)
-  // const fmsLaneSectionGeomCol = getFmsLaneSectionsGeomCol(fmsLaneSection)
-  // fmsLaneSectionFeature.setGeometry(fmsLaneSectionGeomCol)
+  const pathSection = {
+    elements: []
+  }
+
+  for (let i = 1; i < centerLineCoords.length; i++) {
+    const curCoord = centerLineCoords[i]
+    const prevCoord = centerLineCoords[i-1]
+    let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
+    let cur = new p5.Vector(curCoord[0], curCoord[1])
+    let direction = p5.Vector.sub(cur, prev)
+
+    if (i === 1) {
+      let xUnitVec = new p5.Vector(1, 0)
+      direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+    }
+    else if(i === centerLineCoords.length - 1) {
+      let xUnitVec = new p5.Vector(1, 0)
+      direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+    }
+
+    if (direction.mag() === 0) {
+      continue;
+    }
+
+    // normalize to 1 meter
+    let directionNorm = p5.Vector.normalize(direction)
+    // multiply to get half lane width
+    let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
+    // translate back to prevCoord
+    let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
+    let leftRib = new LineString(
+      [
+        prevCoord,
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+      ]);
+    leftRib.rotate(Math.PI / 2.0, prevCoord);
+
+    let rightRib = new LineString(
+      [
+        prevCoord,
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+      ]);
+    rightRib.rotate(-Math.PI / 2.0, prevCoord);
+
+    let ribLineString = new LineString(
+      [
+        leftRib.getCoordinates()[1],
+        prevCoord,
+        rightRib.getCoordinates()[1]
+      ]
+    )
+    let first = ribLineString.getCoordinates()[0];
+    let last = ribLineString.getCoordinates()[2];
+
+    let v1 = new p5.Vector(first[0], first[1]);
+    let v2 = new p5.Vector(last[0], last[1]);
+    let dirVec = p5.Vector.sub(v2, v1)
+    let rotationFromNorth = dirVec.heading()
+    let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
+
+    let pathSectionElement = {
+      id: uuidv4(),
+      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+      referenceHeading: rotationFromEast,
+      referenceHeadingUnit: 'rad',
+      leftEdge: {
+        distanceFromReferencePoint: halfLaneWidthMeter,
+      },
+      rightEdge: {
+        distanceFromReferencePoint: halfLaneWidthMeter,
+      }
+    }
+    pathSection.elements.push(pathSectionElement);
+
+    if (i === centerLineCoords.length - 1) {
+      let lastPathSectionElement = {
+        id: uuidv4(),
+        referencePoint: { x: curCoord[0], y: curCoord[1] },
+        referenceHeading: rotationFromEast,
+        referenceHeadingUnit: 'rad',
+        leftEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        }
+      }
+      pathSection.elements.push(lastPathSectionElement);
+    }
+  }
+
+  const ribsCoords = []
+  for (let i = 0; i < pathSection.elements.length; i++) {
+    const pathSectionElem = pathSection.elements[i]
+    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+    ribsCoords.push(ribCoords)
+  }
+  const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
+  ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(ribsGeom)
+
+  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+  boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(boundaryGeom)
 }
 const redrawPathSection = function(pathSectionId, redrawFlags) {
   const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
@@ -718,10 +815,8 @@ const createNodesGeomCol = function(coordinates, options) {
   const curCoord = coordinates
 
   let cur = new p5.Vector(curCoord[0], curCoord[1])
-  let direction = new p5.Vector(1, 0)
-  // normalize to 1 meter
-  let directionNorm = p5.Vector.normalize(direction)
-  directionNorm = p5.Vector.rotate(directionNorm, toRadians(options.referenceHeading))
+  let directionNorm = new p5.Vector(1, 0)
+  directionNorm = p5.Vector.rotate(directionNorm, options.referenceHeading)
 
   let directionLaneWidth = p5.Vector.mult(directionNorm, options.laneWidth)
 
@@ -1089,6 +1184,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   boundarySource.addFeature(boundaryFeature)
 
   setTimeout(() => {
+    // remove drawn straight line from startNode to endNode, now bezier curve exists
     // todo: investigate how to remove without timeout
     addLaneSectionSource.removeFeature(evt.feature)
   }, 0)
