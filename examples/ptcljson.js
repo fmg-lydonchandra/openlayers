@@ -23,10 +23,16 @@ import {
   Polygon
 } from '../src/ol/geom.js';
 import {getCenter, getHeight, getWidth} from '../src/ol/extent.js';
-import {toDegrees} from '../src/ol/math.js';
+import {toDegrees, toRadians} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
+import {toStringHDMS} from '../src/ol/coordinate.js';
+import {toLonLat} from '../src/ol/proj.js';
+
+//todo: cubic bezier steps (16, 24, 32?)
+//todo: edit pathSection start/end weight
+//todo: edit node rotation / heading
 
 //todo: drawStart snaps to end of 'snapped' pathSection
 //todo: drawEnd snaps to start of 'snapped' pathSection
@@ -443,6 +449,44 @@ map.on('loadend', function () {
   firstLoad = true;
 });
 
+const setFmsNodeRotation = () => {
+  const fmsNodeId = document.getElementById('fms-node-id').value;
+  const headingDegree = document.getElementById('fms-node-heading').value;
+  const headingRad = toRadians(parseFloat(headingDegree))
+  console.log('setFmsNodeRotation', fmsNodes, fmsNodeId, headingDegree, headingRad)
+  fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).heading = headingRad;
+  console.log('setFmsNodeRotation', fmsNodes, fmsNodeId, headingDegree, headingRad)
+}
+window.setFmsNodeRotation = setFmsNodeRotation.bind(this);
+
+map.on('contextmenu', (evt) => {
+  console.log('contextmenu', evt)
+
+  if(modifyType === 'modify-nodes') {
+    const coordinate = evt.coordinate;
+    overlay.setPosition(coordinate);
+
+    const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.pixel).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
+    if (snappedFmsNodeFeatures.length === 0) {
+      throw Error('no fmsNode found at drawstart')
+    }
+    const fmsNode = snappedFmsNodeFeatures[0].get('fmsNode')
+
+    const innerHTML = `
+    <div>
+      <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled>${fmsNode.id}</input></p>
+      <p>Rotation: <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
+      <p>Width: <input disabled type='text' value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'</p>
+      <p>Prev Sections: ${fmsNode.prevSectionsId.join(",")} </p>
+      <button onclick="window.setFmsNodeRotation()">Set</button>
+    </div>    `
+
+    content.innerHTML = innerHTML;
+  }
+  evt.stopPropagation()
+  evt.preventDefault()
+})
+
 let snap = new Snap({
   source: drawSource,
 });
@@ -703,14 +747,6 @@ const drawNodesGeomFn = function(coordinates, geometry) {
   return geometry;
 }
 
-// const drawLaneSectionsGeomFn = function(coordinates, geometry) {
-//   if (!geometry) {
-//     geometry = new LineString(coordinates);
-//   }
-//   geometry.setCoordinates(coordinates);
-//   return geometry;
-// }
-
 const drawFmsLaneGeomFn = function(coordinates, geometry, proj, d) {
   let currentIx = coordinates.length-1;
   if (!geometry) {
@@ -767,10 +803,6 @@ const drawFmsLaneGeomFn = function(coordinates, geometry, proj, d) {
   const pathSection = {
     elements: []
   }
-
-  // for (let i = 1; i < coordsCurve.length; i++) {
-  //   const curCoord = coordsCurve[i]
-  //   const prevCoord = coordsCurve[i-1]
 
   for (let i = 1; i < centerLineCoords.length; i++) {
     const curCoord = centerLineCoords[i]
@@ -960,33 +992,6 @@ const getLaneSectionsStyle = function(feature) {
   if(!feature) {
     return styles;
   }
-
-  // if (feature.getGeometry().getType() === 'GeometryCollection') {
-  //   const geometries = feature.getGeometry().getGeometries();
-  //   const centerLineGeom = geometries[PtclJSON.CenterLineIx];
-  //   const centerLineCoords = centerLineGeom.getCoordinates();
-  //   const centerLineLength = centerLineCoords.length;
-  //   if (centerLineLength > 0) {
-  //     const firstCoord = centerLineCoords[0];
-  //     const lastCoord = centerLineCoords[centerLineLength - 1];
-  //     styles.push(new Style({
-  //       geometry: new Point(firstCoord),
-  //       image: new Icon({
-  //         src: 'images/first.svg',
-  //         anchor: [0.5, 0.5],
-  //         scale: 0.5
-  //       })
-  //     }));
-  //     styles.push(new Style({
-  //       geometry: new Point(lastCoord),
-  //       image: new Icon({
-  //         src: 'images/last.svg',
-  //         anchor: [0.5, 0.5],
-  //         scale: 0.5
-  //       })
-  //     }));
-  //   }
-  // }
   return styles;
 }
 
@@ -1291,6 +1296,7 @@ typeSelect.onchange = function () {
   let value = typeSelect.value;
   switch (value) {
     case 'draw':
+
       map.addInteraction(drawFmsLane);
       map.addInteraction(snap);
       // map.addInteraction(centerLineSnap);
@@ -1304,6 +1310,8 @@ typeSelect.onchange = function () {
       modifyDelete = false
       break;
     case 'modify-nodes':
+      modifyType = 'modify-nodes'
+
       map.removeInteraction(drawFmsLane);
       map.removeInteraction(addNodes);
       map.removeInteraction(addLaneSectionsDraw);
