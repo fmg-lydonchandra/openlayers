@@ -31,7 +31,6 @@ import {toStringHDMS} from '../src/ol/coordinate.js';
 import {toLonLat} from '../src/ol/proj.js';
 
 //todo: cubic bezier steps (16, 24, 32?)
-//todo: edit pathSection start/end weight
 //todo: edit node rotation / heading
 
 //todo: drawStart snaps to end of 'snapped' pathSection
@@ -51,7 +50,7 @@ let modifyDelete = false
 const REDRAW_RIBS = 1
 const REDRAW_CENTERLINE = 2
 const REDRAW_BOUNDARY = 4
-
+let bezierSteps = 16;
 /**
  * Our data store, source of truth, draw, modify, delete update this
  * @type {{}}
@@ -428,6 +427,8 @@ window.setFmsLaneSectionWeights = setFmsLaneSectionWeights.bind(this);
 map.on('contextmenu', (evt) => {
   console.log('contextmenu', evt)
 
+  content.innerHTML = "";
+
   if(modifyType === 'modify-nodes') {
     const coordinate = evt.coordinate;
     overlay.setPosition(coordinate);
@@ -441,7 +442,7 @@ map.on('contextmenu', (evt) => {
     const innerHTML = `
     <div>
       <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled></p>
-      <p>Rotation: <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
+      <p>Rotation (degree from east): <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
       <p>Width: <input disabled type='text' value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'</p>
       <p>Prev Sections: ${fmsNode.prevSectionsId.join(",")} </p>
       <button onclick="window.setFmsNodeRotation()">Set</button>
@@ -633,8 +634,12 @@ const redrawFmsNodes = (fmsNodeId) => {
   //todo: redraw fmsLaneSections
 }
 
-const redrawFmsLaneSections = (fmsLaneSectionId) => {
-  debugger
+const redrawAllFmsLaneSections = () => {
+  fmsLaneSections.forEach(fmsLaneSection => {
+    redrawFmsLaneSections(fmsLaneSection.id)
+  })
+}
+const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
   const startFmsNode = fmsLaneSection.startFmsNode
   const endFmsNode = fmsLaneSection.endFmsNode
@@ -660,9 +665,7 @@ const redrawFmsLaneSections = (fmsLaneSectionId) => {
     bezierPt3.x, bezierPt3.y,
     bezierPt4.x, bezierPt4.y);
 
-  const bezierSteps = 24
-
-  const luts = bezier.getLUT(bezierSteps).map(lut => [lut.x, lut.y])
+  const luts = bezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
   console.log('luts', luts.length, luts)
 
   const centerLine = new LineString(luts)
@@ -1027,6 +1030,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
     endFmsNode: endFmsNode,
     startWeight: PathSectionStartWeightMeter,
     endWeight: PathSectionEndWeightMeter,
+    bezierSteps: bezierSteps
   }
   fmsLaneSections.push(fmsLaneSection)
 
@@ -1051,8 +1055,6 @@ addLaneSectionsDraw.on('drawend', (evt) => {
     bezierPt2.x, bezierPt2.y,
     bezierPt3.x, bezierPt3.y,
     bezierPt4.x, bezierPt4.y);
-
-  const bezierSteps = 24
 
   const luts = bezier.getLUT(bezierSteps).map(lut => [lut.x, lut.y])
   console.log('luts', luts.length, luts)
@@ -1243,6 +1245,17 @@ const directionArrow = document.getElementById('direction-arrow');
 directionArrow.onclick = () => {
   showDirectionArrow = directionArrow.checked
   centerLineLayer.changed()
+}
+
+// onchange bezier-steps
+const bezierStepsInput = document.getElementById('bezier-steps');
+bezierSteps = bezierStepsInput.value
+bezierStepsInput.onchange = function () {
+  bezierSteps = bezierStepsInput.value
+  fmsLaneSections.forEach(fmsLaneSection => {
+    fmsLaneSection.bezierSteps = bezierSteps
+  })
+  redrawAllFmsLaneSections()
 }
 
 const toRotationFromEastRad = (rotationFromNorthRad) => {
