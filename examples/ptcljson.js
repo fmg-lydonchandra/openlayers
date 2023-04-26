@@ -30,7 +30,6 @@ import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 import {toStringHDMS} from '../src/ol/coordinate.js';
 import {toLonLat} from '../src/ol/proj.js';
 
-//todo: cubic bezier steps (16, 24, 32?)
 //todo: edit node rotation / heading
 
 //todo: drawStart snaps to end of 'snapped' pathSection
@@ -166,27 +165,15 @@ function calculateCenter(geometry) {
   };
 }
 
+// geometries_
+//   Array(3)
+// Point {disposed: false, eventTarget_: undefined, pendingRemovals_: null, dispatching_: null, listeners_: {…}, …}
+// MultiPoint {disposed: false, eventTarget_: undefined, pendingRemovals_: null, dispatching_: null, listeners_: {…}, …}
+// LineString {disposed: false, eventTarget_: undefined, pendingRemovals_: null, dispatching_: null, listeners_: {…}, …}
+// length
 const getRibsRotationStyle = function (feature) {
   const styles = [defaultStyle];
   if(!feature) {
-    return styles;
-  }
-
-  if (feature.getGeometry().getType() === 'GeometryCollection') {
-    const boundary = feature.getGeometry().getGeometries()[PtclJSON.BoundaryIx];
-    const poly = boundary.getCoordinates();
-    const turfPoly = polygon(poly);
-    //detect kinks / invalid boundary polygon
-    //todo: detect self intersection ?
-    const kinks1 = kinks(turfPoly);
-    if (kinks1.features.length > 0) {
-      styles.push(new Style({
-        stroke: new Stroke({
-          color: 'red',
-          width: 2,
-        }),
-      }));
-    }
     return styles;
   }
 
@@ -194,6 +181,7 @@ const getRibsRotationStyle = function (feature) {
   const geometry = modifyGeometry
     ? modifyGeometry.geometry
     : feature.getGeometry();
+  console.log('geometry', geometry)
   const result = calculateCenter(geometry);
   const center = result.center;
   if (center) {
@@ -429,7 +417,7 @@ map.on('contextmenu', (evt) => {
 
   content.innerHTML = "";
 
-  if(modifyType === 'modify-nodes') {
+  if(modifyType === 'fmsNode') {
     const coordinate = evt.coordinate;
     overlay.setPosition(coordinate);
 
@@ -460,7 +448,6 @@ map.on('contextmenu', (evt) => {
     }
     const fmsLaneSection = snappedFmsNodeFeatures[0].get('fmsLaneSection')
 
-    debugger
     const innerHTML = `
     <div>
       <p>Lane: <input type='text' id='fms-lane-section-id' value='${fmsLaneSection.id}' disabled></p>
@@ -472,8 +459,8 @@ map.on('contextmenu', (evt) => {
 
     content.innerHTML = innerHTML;
   }
-  evt.stopPropagation()
-  evt.preventDefault()
+  // evt.stopPropagation()
+  // evt.preventDefault()
 })
 
 let snap = new Snap({
@@ -501,6 +488,8 @@ select.on('select', function (e) {
       featuresToModify.push(feat)
     }
   })
+  console.log('select', featuresToModify.getArray())
+
   selected.clear();
 
   map.removeInteraction(snap)
@@ -513,25 +502,8 @@ select.on('select', function (e) {
       feature.get('features').forEach(function (modifyFeature) {
         const modifyGeometry = modifyFeature.get('modifyGeometry');
         switch(modifyFeature.get('fmsLaneType')) {
-          case 'centerLine':
-            if (modifyGeometry) {
-              const modifiedCoords = modifyFeature.getGeometry().getCoordinates();
+          case 'fmsNode':
 
-              const pathSectionId = modifyFeature.get('fmsPathSectionId')
-              const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
-              if(modifiedCoords.length !== pathSection.elements.length) {
-                throw new Error('modifiedCoords.length !== pathSection.elements.length')
-              }
-
-              for (let i = 0; i <pathSection.elements.length; i++) {
-                const rib = pathSection.elements[i];
-                rib.referencePoint.x = modifiedCoords[i][0]
-                rib.referencePoint.y = modifiedCoords[i][1]
-              }
-            }
-            break;
-
-          case 'ribs':
             if (modifyGeometry) {
               const point = feature.getGeometry().getCoordinates();
               let modifyPoint = modifyGeometry.point;
@@ -547,31 +519,23 @@ select.on('select', function (e) {
               }
 
               const center = modifyGeometry.center;
-              const minRadius = modifyGeometry.minRadius;
               let dx, dy;
               dx = modifyPoint[0] - center[0];
               dy = modifyPoint[1] - center[1];
-              const initialRadius = Math.sqrt(dx * dx + dy * dy);
-              if (initialRadius > minRadius) {
-                const initialAngle = Math.atan2(dy, dx);
-                dx = point[0] - center[0];
-                dy = point[1] - center[1];
-                const currentRadius = Math.sqrt(dx * dx + dy * dy);
-                if (currentRadius > 0) {
-                  const currentAngle = Math.atan2(dy, dx);
-                  const geometry = modifyGeometry.geometry0.clone();
-                  geometry.rotate(currentAngle - initialAngle, center);
 
-                  modifyGeometry.geometry = geometry;
+              const initialAngle = Math.atan2(dy, dx);
+              dx = point[0] - center[0];
+              dy = point[1] - center[1];
+              const currentRadius = Math.sqrt(dx * dx + dy * dy);
+              if (currentRadius > 0) {
+                const currentAngle = Math.atan2(dy, dx);
+                const geometry = modifyGeometry.geometry0.clone();
+                geometry.rotate(currentAngle - initialAngle, center);
 
-                  //modifyRibs stored rib in fmsPathSections based on new angle
-                  const pathSectionId = modifyFeature.get('fmsPathSectionId')
-                  const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
-                  const ribId = modifyFeature.get('fmsRibsId')
-                  const rib = pathSection.elements.find(elem => elem.id === ribId);
-                  // const newAngle = currentAngle - initialAngle
-                  rib.referenceHeading = toRotationFromEastRad(currentAngle)
-                }
+                modifyGeometry.geometry = geometry;
+                // const newAngle = currentAngle - initialAngle
+                const fmsNode = modifyFeature.get('fmsNode')
+                fmsNode.referenceHeading = toRotationFromEastRad(currentAngle)
               }
             }
             break;
@@ -594,35 +558,19 @@ select.on('select', function (e) {
   // Rib can be deleted by pressing Alt + Click on center point
   modifyRibs.on('modifyend', function (event) {
     event.features.forEach(function (feature) {
-      const pathSectionId = feature.get('fmsPathSectionId')
-
-      if (modifyDelete) {
-        // on delete rib update fmsPathSections, not done in getStyle function
-        const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
-        const ribId = feature.get('fmsRibsId')
-        const ribIx = pathSection.elements.findIndex(elem => elem.id === ribId)
-        pathSection.elements.splice(ribIx, 1)
-        ribsSource.removeFeature(feature)
-        redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY)
-      }
-
-      if(modifyType === 'centerLine') {
-        select.getFeatures().clear()
-        redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY | REDRAW_RIBS)
-      }
+      const fmsNode = feature.get('fmsNode')
 
       const modifyGeometry = feature.get('modifyGeometry');
       if (modifyGeometry)  {
         feature.setGeometry(modifyGeometry.geometry);
         feature.unset('modifyGeometry', true);
-        redrawPathSection(pathSectionId, REDRAW_CENTERLINE | REDRAW_BOUNDARY)
+        redrawFmsNodes(fmsNode.id)
       }
     });
   });
   map.addInteraction(modifyRibs);
   map.addInteraction(snap)
   map.addInteraction(ptclSnap)
-  // map.addInteraction(centerLineSnap)
 })
 
 const redrawFmsNodes = (fmsNodeId) => {
@@ -631,6 +579,12 @@ const redrawFmsNodes = (fmsNodeId) => {
   const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
   fmsNodeFeature.setGeometry(fmsNodeGeomCol)
 
+  fmsNode.prevSectionsId.forEach(prevSectionId => {
+    redrawFmsLaneSections(prevSectionId)
+  })
+  fmsNode.nextSectionsId.forEach(nextSectionId => {
+    redrawFmsLaneSections(nextSectionId)
+  })
   //todo: redraw fmsLaneSections
 }
 
@@ -954,13 +908,13 @@ const getNodesStyle = function(feature) {
 //   // style: getNodesStyle
 // })
 // modifyNodes.on('modifystart', (evt) => {
-//   event.features.forEach(function (feature) {
-//     feature.set(
-//       'modifyGeometry',
-//       {geometry: feature.getGeometry().clone()},
-//       true
-//     );
-//   });
+//   // event.features.forEach(function (feature) {
+//   //   feature.set(
+//   //     'modifyGeometry',
+//   //     {geometry: feature.getGeometry().clone()},
+//   //     true
+//   //   );
+//   // });
 // })
 //
 // modifyNodes.on('modifyend', (evt) => {
@@ -1193,6 +1147,16 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
 });
 
+let drawAndSnapInteractions = [
+  addNodes,
+  addLaneSectionsDraw,
+  // modifyNodes,
+  modifyRibs,
+  addNodesSnap,
+  snap, ptclSnap, centerLineSnap,
+  select,
+]
+
 map.addInteraction(addNodes);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
@@ -1203,32 +1167,37 @@ map.addInteraction(ptclSnap)
  */
 const typeSelect = document.getElementById('type');
 typeSelect.onchange = function () {
+  // drawAndSnapInteractions.forEach(interaction => {
+  //   map.removeInteraction(interaction)
+  // })
   let value = typeSelect.value;
+
   switch (value) {
     case 'add-nodes':
-      map.removeInteraction(addLaneSectionsDraw);
       map.addInteraction(addNodes)
+      map.addInteraction(snap);
+      map.addInteraction(ptclSnap)
       modifyDelete = false
       break;
     case 'modify-nodes':
-      modifyType = 'modify-nodes'
-      map.removeInteraction(addNodes);
-      map.removeInteraction(addLaneSectionsDraw);
+      modifyType = 'fmsNode'
+      map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodes)
+      map.addInteraction(select)
       // map.addInteraction(modifyNodes)
+      map.addInteraction(addNodesSnap)
       modifyDelete = false
       break;
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
-      // map.removeInteraction(modifyNodes)
+
       map.addInteraction(addLaneSectionsDraw)
       map.addInteraction(addNodesSnap)
       modifyDelete = false
       break;
     case 'modify-lane-sections':
       modifyType = 'modify-lane-sections'
-      map.removeInteraction(addNodes)
-      map.removeInteraction(addLaneSectionsDraw)
-      // map.addInteraction(modifyLaneSections)
+      // map.addInteraction(modifyNodes)
       map.addInteraction(centerLineSnap)
       modifyDelete = false
       break;

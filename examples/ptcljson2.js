@@ -633,10 +633,9 @@ select.on('select', function (e) {
   map.addInteraction(modifyRibs);
   map.addInteraction(snap)
   map.addInteraction(ptclSnap)
-  // map.addInteraction(centerLineSnap)
 })
 
-let useBezier = true
+let useBezier = false
 
 const redrawPathSection = function(pathSectionId, redrawFlags) {
   const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
@@ -1281,8 +1280,7 @@ drawFmsLane.on('drawend', (evt) => {
   }, 0)
 });
 
-// map.addInteraction(drawFmsLane);
-map.addInteraction(addNodes);
+map.addInteraction(drawFmsLane);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
 // map.addInteraction(centerLineSnap);
@@ -1302,28 +1300,6 @@ typeSelect.onchange = function () {
       // map.addInteraction(centerLineSnap);
       map.removeInteraction(select);
       map.removeInteraction(modifyRibs);
-      break;
-    case 'add-nodes':
-      map.removeInteraction(drawFmsLane);
-      map.removeInteraction(addLaneSectionsDraw);
-      map.addInteraction(addNodes)
-      modifyDelete = false
-      break;
-    case 'modify-nodes':
-      modifyType = 'modify-nodes'
-
-      map.removeInteraction(drawFmsLane);
-      map.removeInteraction(addNodes);
-      map.removeInteraction(addLaneSectionsDraw);
-      map.addInteraction(modifyNodes)
-      modifyDelete = false
-      break;
-    case 'add-lane-sections':
-      map.removeInteraction(drawFmsLane);
-      map.removeInteraction(addNodes)
-      map.addInteraction(addLaneSectionsDraw)
-      map.addInteraction(addNodesSnap)
-      modifyDelete = false
       break;
 
     case 'modify-ribs':
