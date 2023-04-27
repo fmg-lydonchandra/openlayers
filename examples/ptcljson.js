@@ -43,7 +43,8 @@ import {toLonLat} from '../src/ol/proj.js';
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
 let halfLaneWidthMeter = 8.5;
-let modifyType = 'fmsNodes'
+let modifyFmsLaneType = 'fmsNodes'
+let controlType = 'add-nodes'
 let modifyDelete = false
 
 const REDRAW_RIBS = 1
@@ -165,12 +166,6 @@ function calculateCenter(geometry) {
   };
 }
 
-// geometries_
-//   Array(3)
-// Point {disposed: false, eventTarget_: undefined, pendingRemovals_: null, dispatching_: null, listeners_: {…}, …}
-// MultiPoint {disposed: false, eventTarget_: undefined, pendingRemovals_: null, dispatching_: null, listeners_: {…}, …}
-// LineString {disposed: false, eventTarget_: undefined, pendingRemovals_: null, dispatching_: null, listeners_: {…}, …}
-// length
 const getRibsRotationStyle = function (feature) {
   const styles = [defaultStyle];
   if(!feature) {
@@ -430,7 +425,7 @@ map.on('contextmenu', (evt) => {
 
   content.innerHTML = "";
 
-  if(modifyType === 'fmsNode') {
+  if(controlType === 'modify-nodes') {
     const coordinate = evt.coordinate;
     overlay.setPosition(coordinate);
 
@@ -451,7 +446,7 @@ map.on('contextmenu', (evt) => {
 
     content.innerHTML = innerHTML;
   }
-  else if(modifyType === 'modify-lane-sections') {
+  else if(controlType === 'modify-lane-sections') {
     const coordinate = evt.coordinate;
     overlay.setPosition(coordinate);
 
@@ -494,13 +489,16 @@ let modifyFmsNodes;
 const select = new Select({multi: true});
 // select feature first and then modifyRibs selected features
 select.on('select', function (e) {
+
   const selected = select.getFeatures()
   const featuresToModify = new Collection()
   debugger
-  selected.forEach(feat => {
-    console.log(feat.get('fmsLaneType'), modifyType)
 
-    if(feat.get('fmsLaneType') === modifyType) {
+
+  selected.forEach(feat => {
+    console.log(feat.get('fmsLaneType'), modifyFmsLaneType)
+
+    if(feat.get('fmsLaneType') === modifyFmsLaneType) {
       featuresToModify.push(feat)
     }
   })
@@ -520,6 +518,7 @@ select.on('select', function (e) {
         switch(modifyFeature.get('fmsLaneType')) {
           case 'fmsNode':
 
+
             if (modifyGeometry) {
               const point = feature.getGeometry().getCoordinates();
               let modifyPoint = modifyGeometry.point;
@@ -535,23 +534,31 @@ select.on('select', function (e) {
               }
 
               const center = modifyGeometry.center;
-              let dx, dy;
-              dx = modifyPoint[0] - center[0];
-              dy = modifyPoint[1] - center[1];
-
-              const initialAngle = Math.atan2(dy, dx);
-              dx = point[0] - center[0];
-              dy = point[1] - center[1];
-              const currentRadius = Math.sqrt(dx * dx + dy * dy);
-              if (currentRadius > 0) {
-                const currentAngle = Math.atan2(dy, dx);
+              const fmsNode = modifyFeature.get('fmsNode')
+              if(controlType === 'move-nodes') {
+                fmsNode.referencePoint.x = point[0]
+                fmsNode.referencePoint.y = point[1]
                 const geometry = modifyGeometry.geometry0.clone();
-                geometry.rotate(currentAngle - initialAngle, center);
-
+                geometry.getGeometries()[0].setCoordinates(point)
                 modifyGeometry.geometry = geometry;
-                // const newAngle = currentAngle - initialAngle
-                const fmsNode = modifyFeature.get('fmsNode')
-                fmsNode.referenceHeading = toRotationFromEastRad(currentAngle)
+              } else {
+                let dx, dy;
+                dx = modifyPoint[0] - center[0];
+                dy = modifyPoint[1] - center[1];
+
+                const initialAngle = Math.atan2(dy, dx);
+                dx = point[0] - center[0];
+                dy = point[1] - center[1];
+                const currentRadius = Math.sqrt(dx * dx + dy * dy);
+                if (currentRadius > 0) {
+                  const currentAngle = Math.atan2(dy, dx);
+                  const geometry = modifyGeometry.geometry0.clone();
+                  geometry.rotate(currentAngle - initialAngle, center);
+
+                  modifyGeometry.geometry = geometry;
+                  // const newAngle = currentAngle - initialAngle
+                  fmsNode.referenceHeading = toRotationFromEastRad(currentAngle)
+                }
               }
             }
             break;
@@ -1186,9 +1193,8 @@ typeSelect.onchange = function () {
   // drawAndSnapInteractions.forEach(interaction => {
   //   map.removeInteraction(interaction)
   // })
-  let value = typeSelect.value;
-
-  switch (value) {
+  controlType = typeSelect.value
+  switch (controlType) {
     case 'add-nodes':
       map.addInteraction(addNodes)
       map.addInteraction(snap);
@@ -1196,13 +1202,20 @@ typeSelect.onchange = function () {
       modifyDelete = false
       break;
     case 'modify-nodes':
-      modifyType = 'fmsNode'
+      modifyFmsLaneType = 'fmsNode'
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodes)
       map.addInteraction(select)
       map.addInteraction(addNodesSnap)
       modifyDelete = false
       break;
+    case 'move-nodes':
+      modifyFmsLaneType = 'fmsNode'
+      map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodes)
+      map.addInteraction(select)
+      map.addInteraction(addNodesSnap)
+      break
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
       map.removeInteraction(modifyFmsNodes)
@@ -1212,7 +1225,7 @@ typeSelect.onchange = function () {
       modifyDelete = false
       break;
     case 'modify-lane-sections':
-      modifyType = 'modify-lane-sections'
+      modifyFmsLaneType = 'modify-lane-sections'
       // map.addInteraction(modifyNodes)
       map.addInteraction(centerLineSnap)
       modifyDelete = false
