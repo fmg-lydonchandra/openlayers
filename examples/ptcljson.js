@@ -43,7 +43,7 @@ import {toLonLat} from '../src/ol/proj.js';
 const MaxLaneLengthMeters = 50;
 const MaxLanePoints = 100;
 let halfLaneWidthMeter = 8.5;
-let modifyType = 'ribs'
+let modifyType = 'fmsNodes'
 let modifyDelete = false
 
 const REDRAW_RIBS = 1
@@ -460,7 +460,7 @@ map.on('contextmenu', (evt) => {
     content.innerHTML = innerHTML;
   }
   // evt.stopPropagation()
-  // evt.preventDefault()
+  evt.preventDefault()
 })
 
 let snap = new Snap({
@@ -477,13 +477,16 @@ let addNodesSnap = new Snap({
   source: addNodesSource,
 });
 
-let modifyRibs;
-const select = new Select();
+let modifyFmsNodes;
+const select = new Select({multi: true});
 // select feature first and then modifyRibs selected features
 select.on('select', function (e) {
   const selected = select.getFeatures()
   const featuresToModify = new Collection()
+  debugger
   selected.forEach(feat => {
+    console.log(feat.get('fmsLaneType'), modifyType)
+
     if(feat.get('fmsLaneType') === modifyType) {
       featuresToModify.push(feat)
     }
@@ -494,9 +497,9 @@ select.on('select', function (e) {
 
   map.removeInteraction(snap)
   map.removeInteraction(ptclSnap)
-  map.removeInteraction(modifyRibs)
+  map.removeInteraction(modifyFmsNodes)
 
-  modifyRibs = new Modify({
+  modifyFmsNodes = new Modify({
     features: featuresToModify,
     style: function (feature) {
       feature.get('features').forEach(function (modifyFeature) {
@@ -545,7 +548,7 @@ select.on('select', function (e) {
     }
   });
 
-  modifyRibs.on('modifystart', function (event) {
+  modifyFmsNodes.on('modifystart', function (event) {
     event.features.forEach(function (feature) {
       feature.set(
         'modifyGeometry',
@@ -556,7 +559,7 @@ select.on('select', function (e) {
   });
 
   // Rib can be deleted by pressing Alt + Click on center point
-  modifyRibs.on('modifyend', function (event) {
+  modifyFmsNodes.on('modifyend', function (event) {
     event.features.forEach(function (feature) {
       const fmsNode = feature.get('fmsNode')
 
@@ -568,7 +571,7 @@ select.on('select', function (e) {
       }
     });
   });
-  map.addInteraction(modifyRibs);
+  map.addInteraction(modifyFmsNodes);
   map.addInteraction(snap)
   map.addInteraction(ptclSnap)
 })
@@ -1151,7 +1154,7 @@ let drawAndSnapInteractions = [
   addNodes,
   addLaneSectionsDraw,
   // modifyNodes,
-  modifyRibs,
+  modifyFmsNodes,
   addNodesSnap,
   snap, ptclSnap, centerLineSnap,
   select,
@@ -1184,12 +1187,12 @@ typeSelect.onchange = function () {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodes)
       map.addInteraction(select)
-      // map.addInteraction(modifyNodes)
       map.addInteraction(addNodesSnap)
       modifyDelete = false
       break;
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
+      map.removeInteraction(modifyFmsNodes)
 
       map.addInteraction(addLaneSectionsDraw)
       map.addInteraction(addNodesSnap)
