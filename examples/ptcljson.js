@@ -189,22 +189,35 @@ const getRibsRotationStyle = function (feature) {
       new Style({
         geometry: new Point(center),
         image: new CircleStyle({
-          radius: 4,
+          radius: 14,
           fill: new Fill({
             color: '#ff3333',
           }),
         }),
       })
     );
+    const headingStartPoint = center;
+    const headingEndPoint = [center[0] + 10, center[1] + 0];
+    const headingLineString = new LineString([headingStartPoint, headingEndPoint])
+    const fmsNode = feature.get('fmsNode');
+    headingLineString.rotate(fmsNode.referenceHeading, center)
+    styles.push(
+      new Style({
+        geometry: headingLineString,
+        stroke: new Stroke({
+          color: '#ff3333',
+        })
+      })
+    )
     const coordinates = result.coordinates;
     if (coordinates) {
       // style for ribs rotation
       styles.push(
         new Style({
-          geometry: new GeometryCollection([
-            new MultiPoint(coordinates),
-            new LineString(coordinates),
-          ]),
+          // geometry: new GeometryCollection([
+          //   new MultiPoint(coordinates),
+          //   new LineString(coordinates),
+          // ]),
           image: new CircleStyle({
             radius: 4,
             fill: new Fill({
@@ -213,7 +226,7 @@ const getRibsRotationStyle = function (feature) {
           }),
           stroke: new Stroke({
             color: 'blue',
-            width: 6,
+            width: 10,
           }),
         })
       );
