@@ -420,6 +420,35 @@ const setFmsLaneSectionWeights = () => {
 }
 window.setFmsLaneSectionWeights = setFmsLaneSectionWeights.bind(this);
 
+const deleteFmsLaneSection = () => {
+  if(window.confirm("Delete lane section?")) {
+    const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
+    const fmsLaneSectionIx = fmsLaneSections.findIndex(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId);
+
+    fmsLaneSections.splice(fmsLaneSectionIx, 1);
+
+    const centerLineFeature = centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId)
+    centerLineSource.removeFeature(centerLineFeature);
+
+    const ribsFeature = ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId)
+    ribsSource.removeFeature(ribsFeature);
+
+    const boundaryFeature = boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId)
+    boundarySource.removeFeature(boundaryFeature);
+
+    fmsNodes.forEach(fmsNode => {
+      if(fmsNode.nextSectionsId.includes(fmsLaneSectionId)) {
+        fmsNode.nextSectionsId.splice(fmsNode.nextSectionsId.indexOf(fmsLaneSectionId), 1)
+      }
+      if(fmsNode.prevSectionsId.includes(fmsLaneSectionId)) {
+        fmsNode.prevSectionsId.splice(fmsNode.prevSectionsId.indexOf(fmsLaneSectionId), 1)
+      }
+    })
+    console.log(fmsNodes)
+  }
+}
+window.deleteFmsLaneSection = deleteFmsLaneSection.bind(this);
+
 map.on('contextmenu', (evt) => {
   console.log('contextmenu', evt)
 
@@ -463,6 +492,7 @@ map.on('contextmenu', (evt) => {
       <p>End Weight: <input id='fms-lane-section-end-weight' type='text' value='${fmsLaneSection.endWeight}'></p>
 
       <button onclick="window.setFmsLaneSectionWeights()">Set</button>
+      <button onclick="window.deleteFmsLaneSection()">Delete</button>
     </div>    `
 
     content.innerHTML = innerHTML;
@@ -489,11 +519,8 @@ let modifyFmsNodes;
 const select = new Select({multi: true});
 // select feature first and then modifyRibs selected features
 select.on('select', function (e) {
-
   const selected = select.getFeatures()
   const featuresToModify = new Collection()
-  debugger
-
 
   selected.forEach(feat => {
     console.log(feat.get('fmsLaneType'), modifyFmsLaneType)
@@ -502,8 +529,6 @@ select.on('select', function (e) {
       featuresToModify.push(feat)
     }
   })
-  console.log('select', featuresToModify.getArray())
-
   selected.clear();
 
   map.removeInteraction(snap)
@@ -608,7 +633,6 @@ const redrawFmsNodes = (fmsNodeId) => {
   fmsNode.nextSectionsId.forEach(nextSectionId => {
     redrawFmsLaneSections(nextSectionId)
   })
-  //todo: redraw fmsLaneSections
 }
 
 const redrawAllFmsLaneSections = () => {
