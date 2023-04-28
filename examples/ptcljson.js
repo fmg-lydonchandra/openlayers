@@ -413,12 +413,14 @@ const setFmsLaneSectionWeights = () => {
   const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
   const startWeight = document.getElementById('fms-lane-section-start-weight').value;
   const endWeight = document.getElementById('fms-lane-section-end-weight').value;
+  const bezierSteps = document.getElementById('fms-lane-section-bezier-steps').value;
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId);
   fmsLaneSection.startWeight = parseFloat(startWeight);
   fmsLaneSection.endWeight = parseFloat(endWeight);
+  fmsLaneSection.bezierSteps = parseInt(bezierSteps);
   redrawFmsLaneSections(fmsLaneSectionId)
 }
-window.setFmsLaneSectionWeights = setFmsLaneSectionWeights.bind(this);
+window.updateFmsLaneSection = setFmsLaneSectionWeights.bind(this);
 
 const deleteFmsLaneSection = () => {
   if(window.confirm("Delete lane section?")) {
@@ -490,9 +492,10 @@ map.on('contextmenu', (evt) => {
       <p>Lane: <input type='text' id='fms-lane-section-id' value='${fmsLaneSection.id}' disabled></p>
       <p>Start Weight: <input id='fms-lane-section-start-weight' type='text' value='${fmsLaneSection.startWeight}'></p>
       <p>End Weight: <input id='fms-lane-section-end-weight' type='text' value='${fmsLaneSection.endWeight}'></p>
+      <p>Bezier Steps: <input id='fms-lane-section-bezier-steps' type='text' value='${fmsLaneSection.bezierSteps}'></p>
 
-      <button onclick="window.setFmsLaneSectionWeights()">Set</button>
-      <button onclick="window.deleteFmsLaneSection()">Delete</button>
+      <button onclick='window.updateFmsLaneSection()'>Set</button>
+      <button onclick='window.deleteFmsLaneSection()'>Delete</button>
     </div>    `
 
     content.innerHTML = innerHTML;
