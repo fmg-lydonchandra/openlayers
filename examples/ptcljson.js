@@ -684,26 +684,54 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   const centerLine = new LineString(luts)
   centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
 
-  const fmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
-  const fmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-  let fmsNodeDirectionLaneWidth = p5.Vector.mult(fmsNodeDirectionNorm, startFmsNode.leftEdge.distanceFromReferencePoint)
-  let fmsNodeLaneWidthVec = p5.Vector.add(fmsNodeCenterPt, fmsNodeDirectionLaneWidth);
+  // region left boundary line
+  const starFmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
+  const startFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+  let starFmsNodeDirectionLaneWidth = p5.Vector.mult(startFmsNodeDirectionNorm, startFmsNode.leftEdge.distanceFromReferencePoint)
+  let startFmsNodeLaneWidthVec = p5.Vector.add(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
 
-  let fmsNodeleftRib = new LineString(
+  let startFmsNodeleftRib = new LineString(
     [
-      [fmsNodeCenterPt.x, fmsNodeCenterPt.y],
-      [fmsNodeLaneWidthVec.x, fmsNodeLaneWidthVec.y],
+      [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y],
+      [startFmsNodeLaneWidthVec.x, startFmsNodeLaneWidthVec.y],
     ]);
-  fmsNodeleftRib.rotate(Math.PI / 2.0, [fmsNodeCenterPt.x, fmsNodeCenterPt.y]);
-  centerLineSource.addFeature(new Feature(fmsNodeleftRib))
-  let leftBezierPt1 = new p5.Vector(fmsNodeleftRib.getCoordinates()[1][0], fmsNodeleftRib.getCoordinates()[1][1])
+  startFmsNodeleftRib.rotate(Math.PI / 2.0, [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y]);
+  centerLineSource.addFeature(new Feature(startFmsNodeleftRib))
+  let leftBezierPt1 = new p5.Vector(startFmsNodeleftRib.getCoordinates()[1][0], startFmsNodeleftRib.getCoordinates()[1][1])
   const leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
-  centerLineSource.addFeature(new Feature(new LineString(
+
+  const endFmsNodeCenterPt = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
+  const endFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+  let endFmsNodeDirectionLaneWidth = p5.Vector.mult(endFmsNodeDirectionNorm, endFmsNode.leftEdge.distanceFromReferencePoint)
+  let endFmsNodeLaneWidthVec = p5.Vector.add(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
+  let endFmsNodeleftRib = new LineString(
     [
-      [leftBezierPt1.x, leftBezierPt1.y],
-      [leftBezierPt2.x, leftBezierPt2.y]
-    ])
-  ))
+      [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y],
+      [endFmsNodeLaneWidthVec.x, endFmsNodeLaneWidthVec.y],
+    ]);
+  endFmsNodeleftRib.rotate(Math.PI / 2.0, [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y]);
+  centerLineSource.addFeature(new Feature(endFmsNodeleftRib))
+  const leftBezierPt4 = new p5.Vector(endFmsNodeleftRib.getCoordinates()[1][0], endFmsNodeleftRib.getCoordinates()[1][1])
+  const leftBezierPt3 = p5.Vector.sub(leftBezierPt4, pt3endWeight)
+
+  const leftBezier = new Bezier(
+    leftBezierPt1.x, leftBezierPt1.y,
+    leftBezierPt2.x, leftBezierPt2.y,
+    leftBezierPt3.x, leftBezierPt3.y,
+    leftBezierPt4.x, leftBezierPt4.y);
+  const leftLuts = leftBezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
+  const leftBoundaryLine = new LineString(leftLuts)
+  centerLineSource.addFeature(new Feature(leftBoundaryLine))
+
+
+  // centerLineSource.addFeature(new Feature(new LineString(
+  //   [
+  //     [leftBezierPt1.x, leftBezierPt1.y],
+  //     [leftBezierPt2.x, leftBezierPt2.y],
+  //     [leftBezierPt3.x, leftBezierPt3.y],
+  //     [leftBezierPt4.x, leftBezierPt4.y],
+  //   ])
+  // ))
 
   const centerLineCoords = luts;
 
