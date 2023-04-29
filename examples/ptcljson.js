@@ -29,6 +29,7 @@ import {Collection, Overlay} from '../src/ol/index.js';
 import {bezier, kinks, polygon, unkinkPolygon} from '@turf/turf';
 import {toStringHDMS} from '../src/ol/coordinate.js';
 import {toLonLat} from '../src/ol/proj.js';
+import {start} from '../public/p5.js';
 
 //todo: edit node rotation / heading
 
@@ -50,7 +51,7 @@ let modifyDelete = false
 const REDRAW_RIBS = 1
 const REDRAW_CENTERLINE = 2
 const REDRAW_BOUNDARY = 4
-let bezierSteps = 16;
+let bezierSteps = 32;
 /**
  * Our data store, source of truth, draw, modify, delete update this
  * @type {{}}
@@ -401,13 +402,18 @@ map.on('loadend', function () {
   firstLoad = true;
 });
 
-const setFmsNodeRotation = () => {
+const updateFmsNode = () => {
   const fmsNodeId = document.getElementById('fms-node-id').value;
+  const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
   const referenceHeadingDegree = document.getElementById('fms-node-heading').value;
-  fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId).referenceHeading = toRadians(referenceHeadingDegree);
+  const nodeWidth = document.getElementById('fms-node-width').value;
+
+  fmsNode.referenceHeading = toRadians(referenceHeadingDegree);
+  fmsNode.leftEdge.distanceFromReferencePoint = nodeWidth / 2;
+  fmsNode.rightEdge.distanceFromReferencePoint = nodeWidth / 2;
   redrawFmsNodes(fmsNodeId)
 }
-window.setFmsNodeRotation = setFmsNodeRotation.bind(this);
+window.updateFmsNode = updateFmsNode.bind(this);
 
 const setFmsLaneSectionWeights = () => {
   const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
@@ -469,10 +475,14 @@ map.on('contextmenu', (evt) => {
     const innerHTML = `
     <div>
       <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled></p>
-      <p>Rotation (degree from east): <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
-      <p>Width: <input disabled type='text' value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'</p>
+      <p>Rotation (degree from east):
+        <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
+      <p>Width:
+        <input type='text' id='fms-node-width'
+          value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'
+      </p>
       <p>Prev Sections: ${fmsNode.prevSectionsId.join(",")} </p>
-      <button onclick="window.setFmsNodeRotation()">Set</button>
+      <button onclick="window.updateFmsNode()">Set</button>
     </div>    `
 
     content.innerHTML = innerHTML;
@@ -663,17 +673,37 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
 
   const bezierPt4 = endFmsNode.referencePoint
 
-  const bezier = new Bezier(
+  const centerLineBezier = new Bezier(
     bezierPt1.x, bezierPt1.y,
     bezierPt2.x, bezierPt2.y,
     bezierPt3.x, bezierPt3.y,
     bezierPt4.x, bezierPt4.y);
 
-  const luts = bezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
-  console.log('luts', luts.length, luts)
+  const luts = centerLineBezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
 
   const centerLine = new LineString(luts)
   centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
+
+  const fmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
+  const fmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+  let fmsNodeDirectionLaneWidth = p5.Vector.mult(fmsNodeDirectionNorm, startFmsNode.leftEdge.distanceFromReferencePoint)
+  let fmsNodeLaneWidthVec = p5.Vector.add(fmsNodeCenterPt, fmsNodeDirectionLaneWidth);
+
+  let fmsNodeleftRib = new LineString(
+    [
+      [fmsNodeCenterPt.x, fmsNodeCenterPt.y],
+      [fmsNodeLaneWidthVec.x, fmsNodeLaneWidthVec.y],
+    ]);
+  fmsNodeleftRib.rotate(Math.PI / 2.0, [fmsNodeCenterPt.x, fmsNodeCenterPt.y]);
+  centerLineSource.addFeature(new Feature(fmsNodeleftRib))
+  let leftBezierPt1 = new p5.Vector(fmsNodeleftRib.getCoordinates()[1][0], fmsNodeleftRib.getCoordinates()[1][1])
+  const leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
+  centerLineSource.addFeature(new Feature(new LineString(
+    [
+      [leftBezierPt1.x, leftBezierPt1.y],
+      [leftBezierPt2.x, leftBezierPt2.y]
+    ])
+  ))
 
   const centerLineCoords = luts;
 
@@ -689,11 +719,9 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
     let direction = p5.Vector.sub(cur, prev)
 
     if (i === 1) {
-      let xUnitVec = new p5.Vector(1, 0)
       direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
     }
     else if(i === centerLineCoords.length - 1) {
-      let xUnitVec = new p5.Vector(1, 0)
       direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
     }
 
@@ -705,6 +733,9 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
     let directionNorm = p5.Vector.normalize(direction)
     // multiply to get half lane width
     let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
+    // if(i === 1) {
+    //   directionLaneWidth = p5.Vector.mult(directionNorm, startFmsNode.leftEdge.distanceFromReferencePoint + startFmsNode.rightEdge.distanceFromReferencePoint)
+    // }
     // translate back to prevCoord
     let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
     let leftRib = new LineString(
@@ -741,7 +772,6 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
       id: uuidv4(),
       referencePoint: { x: prevCoord[0], y: prevCoord[1] },
       referenceHeading: rotationFromEast,
-      referenceHeadingUnit: 'rad',
       leftEdge: {
         distanceFromReferencePoint: halfLaneWidthMeter,
       },
@@ -756,7 +786,6 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
         id: uuidv4(),
         referencePoint: { x: curCoord[0], y: curCoord[1] },
         referenceHeading: rotationFromEast,
-        referenceHeadingUnit: 'rad',
         leftEdge: {
           distanceFromReferencePoint: halfLaneWidthMeter,
         },
@@ -779,31 +808,6 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
 
   const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
   boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(boundaryGeom)
-}
-const redrawPathSection = function(pathSectionId, redrawFlags) {
-  const pathSection = fmsPathSections.find(pathSec => pathSec.id === pathSectionId)
-  const ribsCoords = []
-  const centerLineCoords = []
-  pathSection.elements.forEach(elem => {
-    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(elem)
-    ribsCoords.push(ribCoords)
-    centerLineCoords.push(ribCoords[1])
-  })
-
-  if (redrawFlags & REDRAW_RIBS) {
-    const ribsGeom = new MultiLineString(ribsCoords)
-    ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(ribsGeom)
-  }
-
-  if (redrawFlags & REDRAW_CENTERLINE) {
-    const centerLineGeom = new LineString(centerLineCoords)
-    centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(centerLineGeom)
-  }
-
-  if (redrawFlags & REDRAW_BOUNDARY) {
-    const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-    boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === pathSectionId).setGeometry(boundaryGeom)
-  }
 }
 
 const createNodesGeomCol = function(coordinates, options) {
