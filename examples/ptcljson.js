@@ -249,6 +249,7 @@ const boundaryLayer = new VectorLayer({
   }
 })
 
+//todo: is this used?
 const drawSource = new VectorSource();
 const newVector = new VectorLayer({
   source: drawSource,
@@ -259,6 +260,11 @@ const addNodesSource = new VectorSource();
 const addNodesLayer = new VectorLayer({
   source: addNodesSource,
   // style: getRibsRotationStyle
+});
+
+const nodeConnectorsSource = new VectorSource();
+const nodeConnectorsLayer = new VectorLayer({
+  source: nodeConnectorsSource,
 });
 
 const addLaneSectionSource = new VectorSource();
@@ -358,7 +364,7 @@ closer.onclick = function () {
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer],
+  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer],
   overlays: [overlay],
   target: 'map',
   view: new View({
@@ -510,6 +516,9 @@ let centerLineSnap = new Snap({
 let addNodesSnap = new Snap({
   source: addNodesSource,
 });
+let nodeConnectorsSnap = new Snap({
+  source: nodeConnectorsSource,
+})
 
 let modifyFmsNodes;
 const select = new Select({multi: true});
@@ -538,8 +547,6 @@ select.on('select', function (e) {
         const modifyGeometry = modifyFeature.get('modifyGeometry');
         switch(modifyFeature.get('fmsLaneType')) {
           case 'fmsNode':
-
-
             if (modifyGeometry) {
               const point = feature.getGeometry().getCoordinates();
               let modifyPoint = modifyGeometry.point;
@@ -872,6 +879,16 @@ const createNodesGeomCol = function(coordinates, options) {
   let directionNorm = new p5.Vector(1, 0)
   directionNorm = p5.Vector.rotate(directionNorm, options.referenceHeading)
 
+  // const rightSelectorDistance = 5
+  // const rightPoint = p5.Vector.add(cur, p5.Vector.mult(directionNorm, rightSelectorDistance))
+  // const rightPointGeom = new Point([rightPoint.x, rightPoint.y])
+  // rightPointGeom.set('fmsNodeConnectorPosition', 'right')
+  // geometries[LeftRightPointIx].appendPoint(rightPointGeom)
+  // const leftPoint = p5.Vector.sub(cur, p5.Vector.mult(directionNorm, rightSelectorDistance))
+  // const leftPointGeom = new Point([leftPoint.x, leftPoint.y])
+  // rightPointGeom.set('fmsNodeConnectorPosition', 'left')
+  // geometries[LeftRightPointIx].appendPoint(leftPointGeom)
+
   let directionLaneWidth = p5.Vector.mult(directionNorm, options.laneWidth)
 
   let prevCoordLaneWidthVec = p5.Vector.add(cur, directionLaneWidth);
@@ -1031,6 +1048,27 @@ addNodes.on('drawend', function(evt) {
   evt.feature.set('fmsNodeId', fmsNode.id)
   evt.feature.set('fmsNode', fmsNode)
   evt.feature.set('fmsLaneType', 'fmsNode')
+
+  let center = new p5.Vector(fmsNode.referencePoint.x, fmsNode.referencePoint.y)
+  let directionNorm = p5.Vector.rotate(xUnitVec, fmsNode.referenceHeading)
+
+  const selectorDistance = 5
+  const sameHeadingPoint = p5.Vector.add(center, p5.Vector.mult(directionNorm, selectorDistance))
+  const sameHeadingGeom = new Point([sameHeadingPoint.x, sameHeadingPoint.y])
+  const sameHeadingFeature = new Feature(sameHeadingGeom)
+  sameHeadingFeature.set('fmsNode', fmsNode)
+  sameHeadingFeature.set('fmsLaneType', 'connector')
+  sameHeadingFeature.set('fmsNodeConnectorHeading', 'same')
+  nodeConnectorsSource.addFeature(sameHeadingFeature)
+
+  const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
+  const oppositePointGeom = new Point([oppositeHeadingPoint.x, oppositeHeadingPoint.y])
+  const oppositePointFeature = new Feature(oppositePointGeom)
+  // oppositePointFeature.set('fmsNodeId', fmsNode.id)
+  oppositePointFeature.set('fmsNode', fmsNode)
+  oppositePointFeature.set('fmsLaneType', 'connector')
+  sameHeadingFeature.set('fmsNodeConnectorHeading', 'opposite')
+  nodeConnectorsSource.addFeature(oppositePointFeature)
 })
 
 const getLaneSectionsStyle = function(feature) {
@@ -1051,10 +1089,11 @@ const addLaneSectionsDraw = new Draw({
 addLaneSectionsDraw.on('drawstart', (evt) => {
   evt.feature.set('fmsPathSectionId', uuidv4())
   evt.feature.set('fmsLaneType', 'pathSection')
-  const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
+  const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'connector');
   if (snappedFmsNodeFeatures.length === 0) {
     throw Error('no fmsNode found at drawstart')
   }
+  console.log(snappedFmsNodeFeatures)
   const fmsNode = snappedFmsNodeFeatures[0].get('fmsNode')
   evt.feature.set('startFmsNode', fmsNode)
 });
@@ -1063,7 +1102,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   const fmsPathSectionId = evt.feature.get('fmsPathSectionId')
 
-  const endFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
+  const endFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'connector');
   if (endFmsNodeFeatures.length === 0) {
     throw Error('no fmsNode found at drawend')
   }
@@ -1283,14 +1322,16 @@ typeSelect.onchange = function () {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodes)
       map.addInteraction(select)
-      map.addInteraction(addNodesSnap)
+      // map.addInteraction(addNodesSnap)
       break
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
       map.removeInteraction(modifyFmsNodes)
 
       map.addInteraction(addLaneSectionsDraw)
-      map.addInteraction(addNodesSnap)
+      // map.addInteraction(addNodesSnap)
+      map.addInteraction(nodeConnectorsSnap)
+
       modifyDelete = false
       break;
     case 'modify-lane-sections':
