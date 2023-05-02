@@ -743,9 +743,11 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
   return new LineString(luts)
 }
 
-const calculateRibsAndBoundaryGeom = (fmsLaneSection, startFmsNodeConnectorHeading, centerLineCoords) => {
+const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
   const startFmsNode = fmsLaneSection.startFmsNode
+  const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
   const endFmsNode = fmsLaneSection.endFmsNode
+  const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
 
   const pathSection = {
     elements: []
@@ -758,56 +760,20 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, startFmsNodeConnectorHeadi
     let cur = new p5.Vector(curCoord[0], curCoord[1])
     let direction = p5.Vector.sub(cur, prev)
 
+    //todo: refactor drawRibsRotation style to use this
     if (i === 1) {
-      direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + startFmsNodeConnectorHeading)
+      direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
     }
     else if(i === centerLineCoords.length - 1) {
       direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
     }
 
-    if (direction.mag() === 0) {
-      continue;
-    }
-
-    // normalize to 1 meter
-    let directionNorm = p5.Vector.normalize(direction)
-    // multiply to get half lane width
-    let directionLaneWidth = p5.Vector.mult(directionNorm, halfLaneWidthMeter)
-    // translate back to prevCoord
-    let prevCoordLaneWidthVec = p5.Vector.add(prev, directionLaneWidth);
-    let leftRib = new LineString(
-      [
-        prevCoord,
-        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-      ]);
-    leftRib.rotate(Math.PI / 2.0, prevCoord);
-
-    let rightRib = new LineString(
-      [
-        prevCoord,
-        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
-      ]);
-    rightRib.rotate(-Math.PI / 2.0, prevCoord);
-
-    let ribLineString = new LineString(
-      [
-        leftRib.getCoordinates()[1],
-        prevCoord,
-        rightRib.getCoordinates()[1]
-      ]
-    )
-    let first = ribLineString.getCoordinates()[0];
-    let last = ribLineString.getCoordinates()[2];
-
-    let v1 = new p5.Vector(first[0], first[1]);
-    let v2 = new p5.Vector(last[0], last[1]);
-    let dirVec = p5.Vector.sub(v2, v1)
-    let rotationFromNorth = dirVec.heading()
-    let rotationFromEast = toRotationFromEastRad(rotationFromNorth)
+    let rotationFromEast = direction.heading()
 
     let pathSectionElement = {
       id: uuidv4(),
       referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+      // referenceHeading: rotation,
       referenceHeading: rotationFromEast,
       leftEdge: {
         distanceFromReferencePoint: halfLaneWidthMeter,
@@ -817,21 +783,6 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, startFmsNodeConnectorHeadi
       }
     }
     pathSection.elements.push(pathSectionElement);
-
-    if (i === centerLineCoords.length - 1) {
-      let lastPathSectionElement = {
-        id: uuidv4(),
-        referencePoint: { x: curCoord[0], y: curCoord[1] },
-        referenceHeading: rotationFromEast,
-        leftEdge: {
-          distanceFromReferencePoint: halfLaneWidthMeter,
-        },
-        rightEdge: {
-          distanceFromReferencePoint: halfLaneWidthMeter,
-        }
-      }
-      pathSection.elements.push(lastPathSectionElement);
-    }
   }
 
   const ribsCoords = []
@@ -862,7 +813,7 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
 
   const centerLineCoords = centerLine.getCoordinates();
 
-  const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, fmsLaneSection.startFmsNodeConnectorHeading, centerLineCoords);
+  const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
   const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
 
@@ -1142,7 +1093,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   const centerLineCoords = centerLine.getCoordinates();
 
-  const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, startFmsNodeConnectorHeading, centerLineCoords);
+  const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
   const ribsFeature = new Feature({
     geometry: ribsGeom
