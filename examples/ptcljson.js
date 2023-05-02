@@ -34,7 +34,7 @@ let controlType = 'add-nodes'
 let modifyDelete = false
 const xUnitVec = new p5.Vector(1, 0)
 
-let bezierSteps = 32;
+let bezierSteps = 4;
 /**
  * Our data store, source of truth, draw, modify, delete update this
  * @type {{}}
@@ -718,17 +718,40 @@ const createBezierLineGeom = (fmsLaneSection, linePosition) => {
 
 const createBezierCenterLineGeom = (fmsLaneSection) => {
   const startFmsNode = fmsLaneSection.startFmsNode
+  const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
   const endFmsNode = fmsLaneSection.endFmsNode
+  const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
   const bezierPt1 = startFmsNode.referencePoint
   const pt2 = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
-  const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-  const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-  const bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
+  let bezierPt2;
+  if (startFmsNodeConnectorHeading === 'same') {
+    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNodeConnectorHeading)
+    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+    bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
+  } else if (startFmsNodeConnectorHeading === 'opposite') {
+    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
+    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+    bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
+  }
+  else {
+    throw new Error('startFmsNodeConnectorHeading must be same or opposite')
+  }
 
   const pt3 = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
-  const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-  const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-  const bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
+  let bezierPt3;
+  if (endFmsNodeConnectorHeading === 'same') {
+    const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
+    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
+  }
+  else if (endFmsNodeConnectorHeading === 'opposite') {
+    const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
+  }
+  else {
+    throw new Error('endFmsNodeConnectorHeading must be same or opposite')
+  }
 
   const bezierPt4 = endFmsNode.referencePoint
 
@@ -748,7 +771,6 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
   const endFmsNode = fmsLaneSection.endFmsNode
   const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
-
   const pathSection = {
     elements: []
   }
@@ -762,10 +784,20 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
 
     //todo: refactor drawRibsRotation style to use this
     if (i === 1) {
-      direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+      if (startFmsNodeConnectorHeading === 'same') {
+        direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+      }
+      else {
+        direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
+      }
     }
     else if(i === centerLineCoords.length - 1) {
-      direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+      if (endFmsNodeConnectorHeading === 'same') {
+        direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
+      }
+      else {
+        direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+      }
     }
 
     let rotationFromEast = direction.heading()
@@ -783,7 +815,24 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
       }
     }
     pathSection.elements.push(pathSectionElement);
+
+    if (i === centerLineCoords.length - 1) {
+      pathSectionElement = {
+        id: uuidv4(),
+        referencePoint: { x: curCoord[0], y: curCoord[1] },
+        referenceHeading: rotationFromEast,
+        leftEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        }
+      }
+      pathSection.elements.push(pathSectionElement);
+    }
+
   }
+  console.log(pathSection.elements.map(pathSectionElement => pathSectionElement.referenceHeading))
 
   const ribsCoords = []
   for (let i = 0; i < pathSection.elements.length; i++) {
@@ -1012,7 +1061,7 @@ addNodes.on('drawend', function(evt) {
   const sameHeadingFeature = new Feature(sameHeadingGeom)
   sameHeadingFeature.set('fmsNode', fmsNode)
   sameHeadingFeature.set('fmsLaneType', 'connector')
-  sameHeadingFeature.set('fmsNodeConnectorHeading', 0)
+  sameHeadingFeature.set('fmsNodeConnectorHeading', 'same')
   nodeConnectorsSource.addFeature(sameHeadingFeature)
 
   const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
@@ -1021,7 +1070,7 @@ addNodes.on('drawend', function(evt) {
   // oppositePointFeature.set('fmsNodeId', fmsNode.id)
   oppositePointFeature.set('fmsNode', fmsNode)
   oppositePointFeature.set('fmsLaneType', 'connector')
-  oppositePointFeature.set('fmsNodeConnectorHeading', Math.PI)
+  oppositePointFeature.set('fmsNodeConnectorHeading', 'opposite')
   nodeConnectorsSource.addFeature(oppositePointFeature)
 })
 
@@ -1081,17 +1130,17 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   }
   fmsLaneSections.push(fmsLaneSection)
 
-  const centerLine = createBezierCenterLineGeom(fmsLaneSection)
+  const centerLineGeom = createBezierCenterLineGeom(fmsLaneSection)
 
   const centerLineFeature = new Feature({
-    geometry: centerLine,
+    geometry: centerLineGeom,
   })
   centerLineFeature.set('fmsLaneType', 'centerLine')
   centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
   centerLineFeature.set('fmsLaneSection', fmsLaneSection)
   centerLineSource.addFeature(centerLineFeature)
 
-  const centerLineCoords = centerLine.getCoordinates();
+  const centerLineCoords = centerLineGeom.getCoordinates();
 
   const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
