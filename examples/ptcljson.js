@@ -725,7 +725,7 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
   const pt2 = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
   let bezierPt2;
   if (startFmsNodeConnectorHeading === 'same') {
-    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNodeConnectorHeading)
+    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
     bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
   } else if (startFmsNodeConnectorHeading === 'opposite') {
@@ -830,9 +830,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
       }
       pathSection.elements.push(pathSectionElement);
     }
-
   }
-  console.log(pathSection.elements.map(pathSectionElement => pathSectionElement.referenceHeading))
 
   const ribsCoords = []
   for (let i = 0; i < pathSection.elements.length; i++) {
@@ -1230,6 +1228,8 @@ typeSelect.onchange = function () {
     case 'modify-lane-sections':
       modifyFmsLaneType = 'modify-lane-sections'
       // map.addInteraction(modifyNodes)
+      map.removeInteraction(addNodes)
+      map.removeInteraction(addLaneSectionsDraw)
       map.addInteraction(centerLineSnap)
       modifyDelete = false
       break;
