@@ -14,7 +14,7 @@ import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
 import {v4 as uuidv4} from 'uuid';
 import {Bezier} from 'bezier-js';
 
-import {GeometryCollection, LineString, MultiPoint, Point} from '../src/ol/geom.js';
+import {GeometryCollection, LineString, MultiPoint, Point, Polygon} from '../src/ol/geom.js';
 import {getCenter} from '../src/ol/extent.js';
 import {toDegrees, toRadians} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
@@ -24,6 +24,7 @@ import {kinks, polygon} from '@turf/turf';
 //todo: fix draw lane section with defective end rib and boundary when going from right to left
 //todo: fix move node defect, which leave left-right points
 //todo: serialize out into proper file for ingestion into FMS
+//todo: restrict control points when angle is too extreme
 //todo: split pathSection into multiple pathSections if it is too long
 //todo: trace on survey data, left hand side ?
 const MaxLaneLengthMeters = 50;
@@ -645,7 +646,9 @@ const redrawAllFmsLaneSections = () => {
 
 const createBezierLineGeom = (fmsLaneSection, linePosition) => {
   const startFmsNode = fmsLaneSection.startFmsNode
+  const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
   const endFmsNode = fmsLaneSection.endFmsNode
+  const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
 
   const starFmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
   const startFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
@@ -672,9 +675,19 @@ const createBezierLineGeom = (fmsLaneSection, linePosition) => {
   startFmsNodeLeftRib.rotate(Math.PI / 2.0, [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y]);
   // centerLineSource.addFeature(new Feature(startFmsNodeLeftRib))
   let leftBezierPt1 = new p5.Vector(startFmsNodeLeftRib.getCoordinates()[1][0], startFmsNodeLeftRib.getCoordinates()[1][1])
-  const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-  const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-  const leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
+  let leftBezierPt2;
+  if (startFmsNodeConnectorHeading === 'same') {
+    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+    leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
+  } else if (startFmsNodeConnectorHeading === 'opposite') {
+    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
+    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+    leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
+  }
+  else {
+    throw new Error('startFmsNodeConnectorHeading must be same or opposite')
+  }
 
   const endFmsNodeCenterPt = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
   const endFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
@@ -699,14 +712,23 @@ const createBezierLineGeom = (fmsLaneSection, linePosition) => {
       [endFmsNodeLaneWidthVec.x, endFmsNodeLaneWidthVec.y],
     ]);
   endFmsNodeLeftRib.rotate(Math.PI / 2.0, [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y]);
-  // centerLineSource.addFeature(new Feature(endFmsNodeLeftRib))
   const leftBezierPt4 = new p5.Vector(endFmsNodeLeftRib.getCoordinates()[1][0], endFmsNodeLeftRib.getCoordinates()[1][1])
 
-  const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-  const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-  const leftBezierPt3 = p5.Vector.sub(leftBezierPt4, pt3endWeight)
+  let leftBezierPt3;
+  if (endFmsNodeConnectorHeading === 'same') {
+    const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
+    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    leftBezierPt3 = p5.Vector.sub(leftBezierPt4, pt3endWeight)
+  }
+  else if (endFmsNodeConnectorHeading === 'opposite') {
+    const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    leftBezierPt3 = p5.Vector.sub(leftBezierPt4, pt3endWeight)
+  }
+  else {
+    throw new Error('endFmsNodeConnectorHeading must be same or opposite')
+  }
 
-  //todo: restrict control points when angle is too extreme
   const leftBezier = new Bezier(
     leftBezierPt1.x, leftBezierPt1.y,
     leftBezierPt2.x, leftBezierPt2.y,
@@ -775,6 +797,10 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     elements: []
   }
 
+  const leftBoundaryLine = createBezierLineGeom(fmsLaneSection, 'left')
+
+  const rightBoundaryLine = createBezierLineGeom(fmsLaneSection, 'right')
+
   for (let i = 1; i < centerLineCoords.length; i++) {
     const curCoord = centerLineCoords[i]
     const prevCoord = centerLineCoords[i-1]
@@ -839,7 +865,19 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     ribsCoords.push(ribCoords)
   }
   const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
-  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+  // const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
+  const ribsCoordsBezier = [];
+  ribsCoordsBezier.push(ribsCoords[0][2])
+  ribsCoordsBezier.push(ribsCoords[0][1])
+  ribsCoordsBezier.push(ribsCoords[0][0])
+  ribsCoordsBezier.push(...leftBoundaryLine.getCoordinates())
+  ribsCoordsBezier.push(ribsCoords[ribsCoords.length-1][0])
+  ribsCoordsBezier.push(ribsCoords[ribsCoords.length-1][1])
+  ribsCoordsBezier.push(ribsCoords[ribsCoords.length-1][2])
+  ribsCoordsBezier.push(...(rightBoundaryLine.getCoordinates().reverse()))
+  ribsCoordsBezier.push(ribsCoords[0][2])
+
+  const boundaryGeom = new Polygon ([ribsCoordsBezier]);
 
   return { ribsGeom, boundaryGeom }
 }
@@ -851,12 +889,6 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
 
   const centerLine = createBezierCenterLineGeom(fmsLaneSection)
   centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
-
-  const leftBoundaryLine = createBezierLineGeom(fmsLaneSection, 'left')
-  // centerLineSource.addFeature(new Feature(leftBoundaryLine))
-
-  const rightBoundaryLine = createBezierLineGeom(fmsLaneSection, 'right')
-  // centerLineSource.addFeature(new Feature(rightBoundaryLine))
 
   const centerLineCoords = centerLine.getCoordinates();
 
