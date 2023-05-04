@@ -644,25 +644,38 @@ select.on('select', function (e) {
   map.addInteraction(ptclSnap)
 })
 
-const redrawFmsNodes = (fmsNodeId) => {
-  const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
-  const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
-  const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
-  fmsNodeFeature.setGeometry(fmsNodeGeomCol)
-
+/**
+ * Node Connectors are two circles on left and right of a Node, used to connect two nodes to form a lane section
+ * @param fmsNode
+ * @returns {{sameHeadingGeom: Point, oppositeHeadingGeom: Point}}
+ */
+const createNodeConnectorGeom = (fmsNode) => {
   let center = new p5.Vector(fmsNode.referencePoint.x, fmsNode.referencePoint.y)
   let directionNorm = p5.Vector.rotate(xUnitVec, fmsNode.referenceHeading)
   const selectorDistance = 5
   const sameHeadingPoint = p5.Vector.add(center, p5.Vector.mult(directionNorm, selectorDistance))
   const sameHeadingGeom = new Point([sameHeadingPoint.x, sameHeadingPoint.y])
 
+  const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
+  const oppositeHeadingGeom = new Point([oppositeHeadingPoint.x, oppositeHeadingPoint.y])
+  return {
+    sameHeadingGeom, oppositeHeadingGeom
+  }
+}
+
+const redrawFmsNodes = (fmsNodeId) => {
+  const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
+  const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
+  const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
+  fmsNodeFeature.setGeometry(fmsNodeGeomCol)
+
+  const { sameHeadingGeom, oppositeHeadingGeom } = createNodeConnectorGeom(fmsNode)
+
   const connectorHeadingSame = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'same')
   connectorHeadingSame.setGeometry(sameHeadingGeom)
 
-  const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
-  const oppositePointGeom = new Point([oppositeHeadingPoint.x, oppositeHeadingPoint.y])
   const connectorHeadingOpposite = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'opposite')
-  connectorHeadingOpposite.setGeometry(oppositePointGeom)
+  connectorHeadingOpposite.setGeometry(oppositeHeadingGeom)
 
   fmsNode.prevSectionsId.forEach(prevSectionId => {
     redrawFmsLaneSections(prevSectionId)
@@ -1110,12 +1123,8 @@ addNodes.on('drawend', function(evt) {
   evt.feature.set('fmsNode', fmsNode)
   evt.feature.set('fmsLaneType', 'fmsNode')
 
-  let center = new p5.Vector(fmsNode.referencePoint.x, fmsNode.referencePoint.y)
-  let directionNorm = p5.Vector.rotate(xUnitVec, fmsNode.referenceHeading)
+  const { sameHeadingGeom, oppositeHeadingGeom } = createNodeConnectorGeom(fmsNode)
 
-  const selectorDistance = 5
-  const sameHeadingPoint = p5.Vector.add(center, p5.Vector.mult(directionNorm, selectorDistance))
-  const sameHeadingGeom = new Point([sameHeadingPoint.x, sameHeadingPoint.y])
   const sameHeadingFeature = new Feature(sameHeadingGeom)
   sameHeadingFeature.set('fmsNode', fmsNode)
   sameHeadingFeature.set('fmsNodeId', fmsNode.id)
@@ -1123,14 +1132,12 @@ addNodes.on('drawend', function(evt) {
   sameHeadingFeature.set('fmsNodeConnectorHeading', 'same')
   nodeConnectorsSource.addFeature(sameHeadingFeature)
 
-  const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
-  const oppositePointGeom = new Point([oppositeHeadingPoint.x, oppositeHeadingPoint.y])
-  const oppositePointFeature = new Feature(oppositePointGeom)
-  oppositePointFeature.set('fmsNode', fmsNode)
-  oppositePointFeature.set('fmsNodeId', fmsNode.id)
-  oppositePointFeature.set('fmsLaneType', 'connector')
-  oppositePointFeature.set('fmsNodeConnectorHeading', 'opposite')
-  nodeConnectorsSource.addFeature(oppositePointFeature)
+  const oppositeHeadingFeature = new Feature(oppositeHeadingGeom)
+  oppositeHeadingFeature.set('fmsNode', fmsNode)
+  oppositeHeadingFeature.set('fmsNodeId', fmsNode.id)
+  oppositeHeadingFeature.set('fmsLaneType', 'connector')
+  oppositeHeadingFeature.set('fmsNodeConnectorHeading', 'opposite')
+  nodeConnectorsSource.addFeature(oppositeHeadingFeature)
 })
 
 const getLaneSectionsStyle = function(feature) {
