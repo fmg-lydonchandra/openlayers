@@ -318,6 +318,26 @@ const ptclSource = new VectorSource({
   overlaps: false,
 });
 
+// const ptclSource = new VectorSource({
+//   url: 'flying_fish_original_ptcl_1.ptcl.json',
+//   format: new PtclJSON({
+//     dataProjection: 'EPSG:28350',
+//     style: defaultStyle,
+//     mgrsSquare: {
+//       utm_zone: 50,
+//       lat_band: 'K',
+//       column: 'M',
+//       row: 'A',
+//     },
+//     layers: {
+//       boundary: boundaryLayer,
+//       centerLine: centerLineLayer,
+//       ribs: ribsLayer,
+//     }
+//   }),
+//   overlaps: false,
+// });
+
 const vectorPtcl = new VectorLayer({
   source: ptclSource,
   style: defaultStyle,
@@ -630,6 +650,20 @@ const redrawFmsNodes = (fmsNodeId) => {
   const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
   fmsNodeFeature.setGeometry(fmsNodeGeomCol)
 
+  let center = new p5.Vector(fmsNode.referencePoint.x, fmsNode.referencePoint.y)
+  let directionNorm = p5.Vector.rotate(xUnitVec, fmsNode.referenceHeading)
+  const selectorDistance = 5
+  const sameHeadingPoint = p5.Vector.add(center, p5.Vector.mult(directionNorm, selectorDistance))
+  const sameHeadingGeom = new Point([sameHeadingPoint.x, sameHeadingPoint.y])
+
+  const connectorHeadingSame = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'same')
+  connectorHeadingSame.setGeometry(sameHeadingGeom)
+
+  const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
+  const oppositePointGeom = new Point([oppositeHeadingPoint.x, oppositeHeadingPoint.y])
+  const connectorHeadingOpposite = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'opposite')
+  connectorHeadingOpposite.setGeometry(oppositePointGeom)
+
   fmsNode.prevSectionsId.forEach(prevSectionId => {
     redrawFmsLaneSections(prevSectionId)
   })
@@ -884,8 +918,6 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
 
 const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
-  const startFmsNode = fmsLaneSection.startFmsNode
-  const endFmsNode = fmsLaneSection.endFmsNode
 
   const centerLine = createBezierCenterLineGeom(fmsLaneSection)
   centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
@@ -895,11 +927,7 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
   const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
-
-  // const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
   ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(ribsGeom)
-
-  // const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
   boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(boundaryGeom)
 }
 
@@ -1090,6 +1118,7 @@ addNodes.on('drawend', function(evt) {
   const sameHeadingGeom = new Point([sameHeadingPoint.x, sameHeadingPoint.y])
   const sameHeadingFeature = new Feature(sameHeadingGeom)
   sameHeadingFeature.set('fmsNode', fmsNode)
+  sameHeadingFeature.set('fmsNodeId', fmsNode.id)
   sameHeadingFeature.set('fmsLaneType', 'connector')
   sameHeadingFeature.set('fmsNodeConnectorHeading', 'same')
   nodeConnectorsSource.addFeature(sameHeadingFeature)
@@ -1097,8 +1126,8 @@ addNodes.on('drawend', function(evt) {
   const oppositeHeadingPoint = p5.Vector.sub(center, p5.Vector.mult(directionNorm, selectorDistance))
   const oppositePointGeom = new Point([oppositeHeadingPoint.x, oppositeHeadingPoint.y])
   const oppositePointFeature = new Feature(oppositePointGeom)
-  // oppositePointFeature.set('fmsNodeId', fmsNode.id)
   oppositePointFeature.set('fmsNode', fmsNode)
+  oppositePointFeature.set('fmsNodeId', fmsNode.id)
   oppositePointFeature.set('fmsLaneType', 'connector')
   oppositePointFeature.set('fmsNodeConnectorHeading', 'opposite')
   nodeConnectorsSource.addFeature(oppositePointFeature)
