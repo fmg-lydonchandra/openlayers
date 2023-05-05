@@ -21,6 +21,7 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
+//todo: adjust second last rib heading and width
 //todo: serialize out into proper file for ingestion into FMS
 //todo: restrict control points when angle is too extreme
 //todo: split pathSection into multiple pathSections if it is too long
@@ -884,36 +885,36 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
 
     let rotationFromEast = direction.heading()
 
-    if (i < centerLineCoords.length - 1) {
-      let pathSectionElement = {
-        id: uuidv4(),
-        referencePoint: {x: prevCoord[0], y: prevCoord[1]},
-        referenceHeading: rotationFromEast,
-        leftEdge: {
-          distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1)
-        },
-        rightEdge: {
-          distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1),
-        }
+    let pathSectionElement = {
+      id: uuidv4(),
+      referencePoint: {x: prevCoord[0], y: prevCoord[1]},
+      referenceHeading: rotationFromEast,
+      leftEdge: {
+        distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1)
+      },
+      rightEdge: {
+        distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1),
       }
-      pathSection.elements.push(pathSectionElement);
-    } else if (i === centerLineCoords.length - 1) {
+    }
+    pathSection.elements.push(pathSectionElement);
 
-      const prevSectionHeading = pathSection.elements[i-2].referenceHeading
+    if (i === centerLineCoords.length - 1) {
 
-      // add second last rib
-      let secondLasPathSectionElement = {
-        id: uuidv4(),
-        referencePoint: { x: prevCoord[0], y: prevCoord[1] },
-        referenceHeading: (rotationFromEast + prevSectionHeading) / 2,
-        leftEdge: {
-          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/2 * (i-1),
-        },
-        rightEdge: {
-          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/ 2 * (i-1),
-        }
-      }
-      pathSection.elements.push(secondLasPathSectionElement);
+      // const prevSectionHeading = pathSection.elements[i-2].referenceHeading
+      //
+      // // add second last rib
+      // let secondLasPathSectionElement = {
+      //   id: uuidv4(),
+      //   referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+      //   referenceHeading: (rotationFromEast + prevSectionHeading) / 2,
+      //   leftEdge: {
+      //     distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/2 * (i-1),
+      //   },
+      //   rightEdge: {
+      //     distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/ 2 * (i-1),
+      //   }
+      // }
+      // pathSection.elements.push(secondLasPathSectionElement);
 
       // add last rib, at endFmsNode
       let lastPathSectionElement = {
