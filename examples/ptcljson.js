@@ -21,8 +21,6 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
-//todo: fix draw lane section with defective end rib and boundary when going from right to left
-//todo: fix move node defect, which leave left-right points
 //todo: serialize out into proper file for ingestion into FMS
 //todo: restrict control points when angle is too extreme
 //todo: split pathSection into multiple pathSections if it is too long
@@ -720,17 +718,16 @@ const createBezierLineGeom = (fmsLaneSection, linePosition) => {
       [startFmsNodeLeftLaneWidthVec.x, startFmsNodeLeftLaneWidthVec.y],
     ]);
   startFmsNodeLeftRib.rotate(Math.PI / 2.0, [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y]);
-  // centerLineSource.addFeature(new Feature(startFmsNodeLeftRib))
-  let leftBezierPt1 = new p5.Vector(startFmsNodeLeftRib.getCoordinates()[1][0], startFmsNodeLeftRib.getCoordinates()[1][1])
-  let leftBezierPt2;
+  let bezierPt1 = new p5.Vector(startFmsNodeLeftRib.getCoordinates()[1][0], startFmsNodeLeftRib.getCoordinates()[1][1])
+  let bezierPt2;
   if (startFmsNodeConnectorHeading === 'same') {
     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-    leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
+    bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
   } else if (startFmsNodeConnectorHeading === 'opposite') {
     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-    leftBezierPt2 = p5.Vector.add(leftBezierPt1, pt2startWeight)
+    bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
   }
   else {
     throw new Error('startFmsNodeConnectorHeading must be same or opposite')
@@ -759,30 +756,32 @@ const createBezierLineGeom = (fmsLaneSection, linePosition) => {
       [endFmsNodeLaneWidthVec.x, endFmsNodeLaneWidthVec.y],
     ]);
   endFmsNodeLeftRib.rotate(Math.PI / 2.0, [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y]);
-  const leftBezierPt4 = new p5.Vector(endFmsNodeLeftRib.getCoordinates()[1][0], endFmsNodeLeftRib.getCoordinates()[1][1])
+  const bezierPt4 = new p5.Vector(endFmsNodeLeftRib.getCoordinates()[1][0], endFmsNodeLeftRib.getCoordinates()[1][1])
 
-  let leftBezierPt3;
+  let bezierPt3;
   if (endFmsNodeConnectorHeading === 'same') {
     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
-    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-    leftBezierPt3 = p5.Vector.sub(leftBezierPt4, pt3endWeight)
+    // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    const pt3endWeight = p5.Vector.mult(pt3direction, 1)
+    bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
   }
   else if (endFmsNodeConnectorHeading === 'opposite') {
     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-    leftBezierPt3 = p5.Vector.sub(leftBezierPt4, pt3endWeight)
+    // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    const pt3endWeight = p5.Vector.mult(pt3direction, 1)
+    bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
   }
   else {
     throw new Error('endFmsNodeConnectorHeading must be same or opposite')
   }
 
-  const leftBezier = new Bezier(
-    leftBezierPt1.x, leftBezierPt1.y,
-    leftBezierPt2.x, leftBezierPt2.y,
-    leftBezierPt3.x, leftBezierPt3.y,
-    leftBezierPt4.x, leftBezierPt4.y);
-  const leftLuts = leftBezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
-  return new LineString(leftLuts);
+  const bezier = new Bezier(
+    bezierPt1.x, bezierPt1.y,
+    bezierPt2.x, bezierPt2.y,
+    bezierPt3.x, bezierPt3.y,
+    bezierPt4.x, bezierPt4.y);
+  const luts = bezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
+  return new LineString(luts);
 }
 
 const createBezierCenterLineGeom = (fmsLaneSection) => {
@@ -835,6 +834,11 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
   return new LineString(luts)
 }
 
+const isEqualWithTolerance = (a, b) => {
+  const tolerance = 1e-7;
+  return Math.abs(a - b) < tolerance
+}
+
 const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
   const startFmsNode = fmsLaneSection.startFmsNode
   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
@@ -844,9 +848,14 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     elements: []
   }
 
-  const leftBoundaryLine = createBezierLineGeom(fmsLaneSection, 'left')
+  const startFmsNodeWidth = startFmsNode.leftEdge.distanceFromReferencePoint + startFmsNode.rightEdge.distanceFromReferencePoint
+  const endFmsNodeWidth = endFmsNode.leftEdge.distanceFromReferencePoint + endFmsNode.rightEdge.distanceFromReferencePoint
 
-  const rightBoundaryLine = createBezierLineGeom(fmsLaneSection, 'right')
+  let edgeDistanceDelta = 0
+  if (!isEqualWithTolerance(startFmsNodeWidth, endFmsNodeWidth)) {
+    // if endFmsNodeWidth is greater than startFmsNodeWidth, then edgeDistanceDelta will be positive
+    edgeDistanceDelta = (endFmsNodeWidth - startFmsNodeWidth) / centerLineCoords.length
+  }
 
   for (let i = 1; i < centerLineCoords.length; i++) {
     const curCoord = centerLineCoords[i]
@@ -875,33 +884,50 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
 
     let rotationFromEast = direction.heading()
 
-    let pathSectionElement = {
-      id: uuidv4(),
-      referencePoint: { x: prevCoord[0], y: prevCoord[1] },
-      // referenceHeading: rotation,
-      referenceHeading: rotationFromEast,
-      leftEdge: {
-        distanceFromReferencePoint: halfLaneWidthMeter,
-      },
-      rightEdge: {
-        distanceFromReferencePoint: halfLaneWidthMeter,
+    if (i < centerLineCoords.length - 1) {
+      let pathSectionElement = {
+        id: uuidv4(),
+        referencePoint: {x: prevCoord[0], y: prevCoord[1]},
+        referenceHeading: rotationFromEast,
+        leftEdge: {
+          distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1)
+        },
+        rightEdge: {
+          distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1),
+        }
       }
-    }
-    pathSection.elements.push(pathSectionElement);
+      pathSection.elements.push(pathSectionElement);
+    } else if (i === centerLineCoords.length - 1) {
 
-    if (i === centerLineCoords.length - 1) {
-      pathSectionElement = {
+      const prevSectionHeading = pathSection.elements[i-2].referenceHeading
+
+      // add second last rib
+      let secondLasPathSectionElement = {
+        id: uuidv4(),
+        referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+        referenceHeading: (rotationFromEast + prevSectionHeading) / 2,
+        leftEdge: {
+          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/2 * (i-1),
+        },
+        rightEdge: {
+          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/ 2 * (i-1),
+        }
+      }
+      pathSection.elements.push(secondLasPathSectionElement);
+
+      // add last rib, at endFmsNode
+      let lastPathSectionElement = {
         id: uuidv4(),
         referencePoint: { x: curCoord[0], y: curCoord[1] },
         referenceHeading: rotationFromEast,
         leftEdge: {
-          distanceFromReferencePoint: halfLaneWidthMeter,
+          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/2 * (i-1),
         },
         rightEdge: {
-          distanceFromReferencePoint: halfLaneWidthMeter,
+          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/ 2 * (i-1),
         }
       }
-      pathSection.elements.push(pathSectionElement);
+      pathSection.elements.push(lastPathSectionElement);
     }
   }
 
@@ -912,19 +938,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     ribsCoords.push(ribCoords)
   }
   const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
-  // const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
-  const ribsCoordsBezier = [];
-  ribsCoordsBezier.push(ribsCoords[0][2])
-  ribsCoordsBezier.push(ribsCoords[0][1])
-  ribsCoordsBezier.push(ribsCoords[0][0])
-  ribsCoordsBezier.push(...leftBoundaryLine.getCoordinates())
-  ribsCoordsBezier.push(ribsCoords[ribsCoords.length-1][0])
-  ribsCoordsBezier.push(ribsCoords[ribsCoords.length-1][1])
-  ribsCoordsBezier.push(ribsCoords[ribsCoords.length-1][2])
-  ribsCoordsBezier.push(...(rightBoundaryLine.getCoordinates().reverse()))
-  ribsCoordsBezier.push(ribsCoords[0][2])
-
-  const boundaryGeom = new Polygon ([ribsCoordsBezier]);
+  const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
 
   return { ribsGeom, boundaryGeom }
 }
@@ -1186,13 +1200,13 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   const fmsLaneSection = {
     id: fmsPathSectionId,
-    startFmsNode: startFmsNode,
-    startFmsNodeConnectorHeading: startFmsNodeConnectorHeading,
-    endFmsNode: endFmsNode,
-    endFmsNodeConnectorHeading: endFmsNodeConnectorHeading,
+    startFmsNode,
+    startFmsNodeConnectorHeading,
+    endFmsNode,
+    endFmsNodeConnectorHeading,
     startWeight: PathSectionStartWeightMeter,
     endWeight: PathSectionEndWeightMeter,
-    bezierSteps: bezierSteps
+    bezierSteps
   }
   fmsLaneSections.push(fmsLaneSection)
 
