@@ -22,6 +22,7 @@ import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
 //todo: adjust second last rib heading and width
+//todo: predefined shape, like extension loop
 //todo: serialize out into proper file for ingestion into FMS
 //todo: restrict control points when angle is too extreme
 //todo: split pathSection into multiple pathSections if it is too long
@@ -916,16 +917,16 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
       // }
       // pathSection.elements.push(secondLasPathSectionElement);
 
-      // add last rib, at endFmsNode
+      // add last rib, at endFmsNode, must match endFmsNode heading and width
       let lastPathSectionElement = {
         id: uuidv4(),
         referencePoint: { x: curCoord[0], y: curCoord[1] },
         referenceHeading: rotationFromEast,
         leftEdge: {
-          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/2 * (i-1),
+          distanceFromReferencePoint: endFmsNodeWidth / 2,
         },
         rightEdge: {
-          distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/ 2 * (i-1),
+          distanceFromReferencePoint: endFmsNodeWidth / 2,
         }
       }
       pathSection.elements.push(lastPathSectionElement);
