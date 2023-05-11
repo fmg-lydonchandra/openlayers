@@ -14,7 +14,7 @@ import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
 import {v4 as uuidv4} from 'uuid';
 import {Bezier} from 'bezier-js';
 
-import {GeometryCollection, LineString, MultiPoint, Point, Polygon} from '../src/ol/geom.js';
+import {GeometryCollection, LineString, MultiPoint, Point} from '../src/ol/geom.js';
 import {getCenter} from '../src/ol/extent.js';
 import {toDegrees, toRadians} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
@@ -690,101 +690,6 @@ const redrawAllFmsLaneSections = () => {
   })
 }
 
-// const createBezierLineGeom = (fmsLaneSection, linePosition) => {
-//   const startFmsNode = fmsLaneSection.startFmsNode
-//   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
-//   const endFmsNode = fmsLaneSection.endFmsNode
-//   const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
-//
-//   const starFmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
-//   const startFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-//   let starFmsNodeDirectionLaneWidth = p5.Vector.mult(startFmsNodeDirectionNorm, startFmsNode.leftEdge.distanceFromReferencePoint)
-//
-//   let startFmsNodeLeftLaneWidthVec;
-//
-//   switch (linePosition) {
-//     case 'left':
-//       startFmsNodeLeftLaneWidthVec = p5.Vector.add(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
-//       break;
-//     case 'right':
-//       startFmsNodeLeftLaneWidthVec = p5.Vector.sub(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
-//       break;
-//     default:
-//       throw new Error('linePosition must be left or right')
-//   }
-//
-//   let startFmsNodeLeftRib = new LineString(
-//     [
-//       [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y],
-//       [startFmsNodeLeftLaneWidthVec.x, startFmsNodeLeftLaneWidthVec.y],
-//     ]);
-//   startFmsNodeLeftRib.rotate(Math.PI / 2.0, [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y]);
-//   let bezierPt1 = new p5.Vector(startFmsNodeLeftRib.getCoordinates()[1][0], startFmsNodeLeftRib.getCoordinates()[1][1])
-//   let bezierPt2;
-//   if (startFmsNodeConnectorHeading === 'same') {
-//     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-//     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-//     bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
-//   } else if (startFmsNodeConnectorHeading === 'opposite') {
-//     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
-//     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-//     bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
-//   }
-//   else {
-//     throw new Error('startFmsNodeConnectorHeading must be same or opposite')
-//   }
-//
-//   const endFmsNodeCenterPt = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
-//   const endFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-//   let endFmsNodeDirectionLaneWidth = p5.Vector.mult(endFmsNodeDirectionNorm, endFmsNode.leftEdge.distanceFromReferencePoint)
-//
-//   let endFmsNodeLaneWidthVec;
-//
-//   switch (linePosition) {
-//     case 'left':
-//       endFmsNodeLaneWidthVec = p5.Vector.add(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
-//       break;
-//     case 'right':
-//       endFmsNodeLaneWidthVec = p5.Vector.sub(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
-//       break;
-//     default:
-//       throw new Error('linePosition must be left or right')
-//   }
-//
-//   let endFmsNodeLeftRib = new LineString(
-//     [
-//       [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y],
-//       [endFmsNodeLaneWidthVec.x, endFmsNodeLaneWidthVec.y],
-//     ]);
-//   endFmsNodeLeftRib.rotate(Math.PI / 2.0, [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y]);
-//   const bezierPt4 = new p5.Vector(endFmsNodeLeftRib.getCoordinates()[1][0], endFmsNodeLeftRib.getCoordinates()[1][1])
-//
-//   let bezierPt3;
-//   if (endFmsNodeConnectorHeading === 'same') {
-//     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
-//     // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-//     const pt3endWeight = p5.Vector.mult(pt3direction, 1)
-//     bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
-//   }
-//   else if (endFmsNodeConnectorHeading === 'opposite') {
-//     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-//     // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-//     const pt3endWeight = p5.Vector.mult(pt3direction, 1)
-//     bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
-//   }
-//   else {
-//     throw new Error('endFmsNodeConnectorHeading must be same or opposite')
-//   }
-//
-//   const bezier = new Bezier(
-//     bezierPt1.x, bezierPt1.y,
-//     bezierPt2.x, bezierPt2.y,
-//     bezierPt3.x, bezierPt3.y,
-//     bezierPt4.x, bezierPt4.y);
-//   const luts = bezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
-//   return new LineString(luts);
-// }
-
 const createBezierCenterLineGeom = (fmsLaneSection) => {
   const startFmsNode = fmsLaneSection.startFmsNode
   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
@@ -1329,6 +1234,30 @@ typeSelect.onchange = function () {
   }
 };
 
+map.on('wheel', (evt) => {
+  const delta = evt.originalEvent.deltaY
+  // console.log('wheel', evt)
+
+  if(controlType === 'modify-nodes') {
+    const coordinate = evt.coordinate;
+
+    const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.pixel).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
+    if (snappedFmsNodeFeatures.length === 0) {
+      throw Error('no fmsNode found at drawstart')
+    }
+    const fmsNode = snappedFmsNodeFeatures[0].get('fmsNode')
+    const deltaRadians = delta / 120 * Math.PI / 180
+    fmsNode.referenceHeading = fmsNode.referenceHeading + deltaRadians
+    redrawFmsNodes(fmsNode.id)
+    evt.stopPropagation()
+    evt.preventDefault()
+
+  }
+  // evt.preventDefault();
+  // const zoom = map.getView().getZoom();
+  // map.getView().setZoom(zoom + evt.deltaY * 0.01);
+})
+
 const laneWidthInput = document.getElementById('lane-width');
 halfLaneWidthMeter = laneWidthInput.value / 2
 laneWidthInput.onchange = function () {
@@ -1365,3 +1294,4 @@ const toRotationFromEastRad = (rotationFromNorthRad) => {
   }
   return toRotationFromEastRad
 }
+
