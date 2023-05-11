@@ -21,10 +21,9 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
-//todo: adjust second last rib heading and width
+//todo: bidirectional
 //todo: predefined shape, like extension loop
 //todo: serialize out into proper file for ingestion into FMS
-//todo: restrict control points when angle is too extreme
 //todo: split pathSection into multiple pathSections if it is too long
 //todo: trace on survey data, left hand side ?
 const MaxLaneLengthMeters = 50;
@@ -691,100 +690,100 @@ const redrawAllFmsLaneSections = () => {
   })
 }
 
-const createBezierLineGeom = (fmsLaneSection, linePosition) => {
-  const startFmsNode = fmsLaneSection.startFmsNode
-  const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
-  const endFmsNode = fmsLaneSection.endFmsNode
-  const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
-
-  const starFmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
-  const startFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-  let starFmsNodeDirectionLaneWidth = p5.Vector.mult(startFmsNodeDirectionNorm, startFmsNode.leftEdge.distanceFromReferencePoint)
-
-  let startFmsNodeLeftLaneWidthVec;
-
-  switch (linePosition) {
-    case 'left':
-      startFmsNodeLeftLaneWidthVec = p5.Vector.add(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
-      break;
-    case 'right':
-      startFmsNodeLeftLaneWidthVec = p5.Vector.sub(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
-      break;
-    default:
-      throw new Error('linePosition must be left or right')
-  }
-
-  let startFmsNodeLeftRib = new LineString(
-    [
-      [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y],
-      [startFmsNodeLeftLaneWidthVec.x, startFmsNodeLeftLaneWidthVec.y],
-    ]);
-  startFmsNodeLeftRib.rotate(Math.PI / 2.0, [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y]);
-  let bezierPt1 = new p5.Vector(startFmsNodeLeftRib.getCoordinates()[1][0], startFmsNodeLeftRib.getCoordinates()[1][1])
-  let bezierPt2;
-  if (startFmsNodeConnectorHeading === 'same') {
-    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-    bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
-  } else if (startFmsNodeConnectorHeading === 'opposite') {
-    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
-    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
-    bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
-  }
-  else {
-    throw new Error('startFmsNodeConnectorHeading must be same or opposite')
-  }
-
-  const endFmsNodeCenterPt = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
-  const endFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-  let endFmsNodeDirectionLaneWidth = p5.Vector.mult(endFmsNodeDirectionNorm, endFmsNode.leftEdge.distanceFromReferencePoint)
-
-  let endFmsNodeLaneWidthVec;
-
-  switch (linePosition) {
-    case 'left':
-      endFmsNodeLaneWidthVec = p5.Vector.add(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
-      break;
-    case 'right':
-      endFmsNodeLaneWidthVec = p5.Vector.sub(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
-      break;
-    default:
-      throw new Error('linePosition must be left or right')
-  }
-
-  let endFmsNodeLeftRib = new LineString(
-    [
-      [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y],
-      [endFmsNodeLaneWidthVec.x, endFmsNodeLaneWidthVec.y],
-    ]);
-  endFmsNodeLeftRib.rotate(Math.PI / 2.0, [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y]);
-  const bezierPt4 = new p5.Vector(endFmsNodeLeftRib.getCoordinates()[1][0], endFmsNodeLeftRib.getCoordinates()[1][1])
-
-  let bezierPt3;
-  if (endFmsNodeConnectorHeading === 'same') {
-    const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
-    // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-    const pt3endWeight = p5.Vector.mult(pt3direction, 1)
-    bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
-  }
-  else if (endFmsNodeConnectorHeading === 'opposite') {
-    const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-    // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
-    const pt3endWeight = p5.Vector.mult(pt3direction, 1)
-    bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
-  }
-  else {
-    throw new Error('endFmsNodeConnectorHeading must be same or opposite')
-  }
-
-  const bezier = new Bezier(
-    bezierPt1.x, bezierPt1.y,
-    bezierPt2.x, bezierPt2.y,
-    bezierPt3.x, bezierPt3.y,
-    bezierPt4.x, bezierPt4.y);
-  const luts = bezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
-  return new LineString(luts);
-}
+// const createBezierLineGeom = (fmsLaneSection, linePosition) => {
+//   const startFmsNode = fmsLaneSection.startFmsNode
+//   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
+//   const endFmsNode = fmsLaneSection.endFmsNode
+//   const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
+//
+//   const starFmsNodeCenterPt = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
+//   const startFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+//   let starFmsNodeDirectionLaneWidth = p5.Vector.mult(startFmsNodeDirectionNorm, startFmsNode.leftEdge.distanceFromReferencePoint)
+//
+//   let startFmsNodeLeftLaneWidthVec;
+//
+//   switch (linePosition) {
+//     case 'left':
+//       startFmsNodeLeftLaneWidthVec = p5.Vector.add(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
+//       break;
+//     case 'right':
+//       startFmsNodeLeftLaneWidthVec = p5.Vector.sub(starFmsNodeCenterPt, starFmsNodeDirectionLaneWidth);
+//       break;
+//     default:
+//       throw new Error('linePosition must be left or right')
+//   }
+//
+//   let startFmsNodeLeftRib = new LineString(
+//     [
+//       [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y],
+//       [startFmsNodeLeftLaneWidthVec.x, startFmsNodeLeftLaneWidthVec.y],
+//     ]);
+//   startFmsNodeLeftRib.rotate(Math.PI / 2.0, [starFmsNodeCenterPt.x, starFmsNodeCenterPt.y]);
+//   let bezierPt1 = new p5.Vector(startFmsNodeLeftRib.getCoordinates()[1][0], startFmsNodeLeftRib.getCoordinates()[1][1])
+//   let bezierPt2;
+//   if (startFmsNodeConnectorHeading === 'same') {
+//     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+//     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+//     bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
+//   } else if (startFmsNodeConnectorHeading === 'opposite') {
+//     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
+//     const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+//     bezierPt2 = p5.Vector.add(bezierPt1, pt2startWeight)
+//   }
+//   else {
+//     throw new Error('startFmsNodeConnectorHeading must be same or opposite')
+//   }
+//
+//   const endFmsNodeCenterPt = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
+//   const endFmsNodeDirectionNorm = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+//   let endFmsNodeDirectionLaneWidth = p5.Vector.mult(endFmsNodeDirectionNorm, endFmsNode.leftEdge.distanceFromReferencePoint)
+//
+//   let endFmsNodeLaneWidthVec;
+//
+//   switch (linePosition) {
+//     case 'left':
+//       endFmsNodeLaneWidthVec = p5.Vector.add(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
+//       break;
+//     case 'right':
+//       endFmsNodeLaneWidthVec = p5.Vector.sub(endFmsNodeCenterPt, endFmsNodeDirectionLaneWidth);
+//       break;
+//     default:
+//       throw new Error('linePosition must be left or right')
+//   }
+//
+//   let endFmsNodeLeftRib = new LineString(
+//     [
+//       [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y],
+//       [endFmsNodeLaneWidthVec.x, endFmsNodeLaneWidthVec.y],
+//     ]);
+//   endFmsNodeLeftRib.rotate(Math.PI / 2.0, [endFmsNodeCenterPt.x, endFmsNodeCenterPt.y]);
+//   const bezierPt4 = new p5.Vector(endFmsNodeLeftRib.getCoordinates()[1][0], endFmsNodeLeftRib.getCoordinates()[1][1])
+//
+//   let bezierPt3;
+//   if (endFmsNodeConnectorHeading === 'same') {
+//     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
+//     // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+//     const pt3endWeight = p5.Vector.mult(pt3direction, 1)
+//     bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
+//   }
+//   else if (endFmsNodeConnectorHeading === 'opposite') {
+//     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+//     // const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+//     const pt3endWeight = p5.Vector.mult(pt3direction, 1)
+//     bezierPt3 = p5.Vector.sub(bezierPt4, pt3endWeight)
+//   }
+//   else {
+//     throw new Error('endFmsNodeConnectorHeading must be same or opposite')
+//   }
+//
+//   const bezier = new Bezier(
+//     bezierPt1.x, bezierPt1.y,
+//     bezierPt2.x, bezierPt2.y,
+//     bezierPt3.x, bezierPt3.y,
+//     bezierPt4.x, bezierPt4.y);
+//   const luts = bezier.getLUT(fmsLaneSection.bezierSteps).map(lut => [lut.x, lut.y])
+//   return new LineString(luts);
+// }
 
 const createBezierCenterLineGeom = (fmsLaneSection) => {
   const startFmsNode = fmsLaneSection.startFmsNode
@@ -859,6 +858,8 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     edgeDistanceDelta = (endFmsNodeWidth - startFmsNodeWidth) / centerLineCoords.length
   }
 
+  // rib 0 uses startFmsNode heading, last rib uses endFmsNode heading
+  // for everything in between, it's calculated from currentCoord - prevCoord
   for (let i = 1; i < centerLineCoords.length; i++) {
     const curCoord = centerLineCoords[i]
     const prevCoord = centerLineCoords[i-1]
@@ -866,62 +867,58 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     let cur = new p5.Vector(curCoord[0], curCoord[1])
     let direction = p5.Vector.sub(cur, prev)
 
+    let startOrEndDirection;
     //todo: refactor drawRibsRotation style to use this
     if (i === 1) {
       if (startFmsNodeConnectorHeading === 'same') {
-        direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+        startOrEndDirection = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
       }
       else {
-        direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
+        startOrEndDirection = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
       }
     }
     else if(i === centerLineCoords.length - 1) {
       if (endFmsNodeConnectorHeading === 'same') {
-        direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
+        startOrEndDirection = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
       }
       else {
-        direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+        startOrEndDirection = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
       }
     }
 
-    let rotationFromEast = direction.heading()
+    const halfWidth = startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1);
 
-    let pathSectionElement = {
-      id: uuidv4(),
-      referencePoint: {x: prevCoord[0], y: prevCoord[1]},
-      referenceHeading: rotationFromEast,
-      leftEdge: {
-        distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1)
-      },
-      rightEdge: {
-        distanceFromReferencePoint: startFmsNodeWidth / 2 + edgeDistanceDelta / 2 * (i - 1),
+    if (i === 1) {
+      // first rib
+      let pathSectionElement = {
+        referencePoint: {x: prevCoord[0], y: prevCoord[1]},
+        referenceHeading: startOrEndDirection.heading(),
+        leftEdge: {
+          distanceFromReferencePoint: halfWidth
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfWidth,
+        }
       }
+      pathSection.elements.push(pathSectionElement);
     }
-    pathSection.elements.push(pathSectionElement);
-
-    if (i === centerLineCoords.length - 1) {
-
-      // const prevSectionHeading = pathSection.elements[i-2].referenceHeading
-      //
-      // // add second last rib
-      // let secondLasPathSectionElement = {
-      //   id: uuidv4(),
-      //   referencePoint: { x: prevCoord[0], y: prevCoord[1] },
-      //   referenceHeading: (rotationFromEast + prevSectionHeading) / 2,
-      //   leftEdge: {
-      //     distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/2 * (i-1),
-      //   },
-      //   rightEdge: {
-      //     distanceFromReferencePoint: startFmsNodeWidth/2 + edgeDistanceDelta/ 2 * (i-1),
-      //   }
-      // }
-      // pathSection.elements.push(secondLasPathSectionElement);
+    else if (i === centerLineCoords.length - 1) {
+      let secondLasPathSectionElement = {
+        referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+        referenceHeading: direction.heading(),
+        leftEdge: {
+          distanceFromReferencePoint: halfWidth,
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfWidth,
+        }
+      }
+      pathSection.elements.push(secondLasPathSectionElement);
 
       // add last rib, at endFmsNode, must match endFmsNode heading and width
       let lastPathSectionElement = {
-        id: uuidv4(),
         referencePoint: { x: curCoord[0], y: curCoord[1] },
-        referenceHeading: rotationFromEast,
+        referenceHeading: startOrEndDirection.heading(),
         leftEdge: {
           distanceFromReferencePoint: endFmsNodeWidth / 2,
         },
@@ -930,6 +927,18 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
         }
       }
       pathSection.elements.push(lastPathSectionElement);
+    } else {
+      let pathSectionElement = {
+        referencePoint: { x: prevCoord[0], y: prevCoord[1] },
+        referenceHeading: direction.heading(),
+        leftEdge: {
+          distanceFromReferencePoint: halfWidth,
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfWidth,
+        }
+      }
+      pathSection.elements.push(pathSectionElement);
     }
   }
 
