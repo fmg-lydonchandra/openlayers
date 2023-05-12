@@ -1235,27 +1235,35 @@ typeSelect.onchange = function () {
 };
 
 map.on('wheel', (evt) => {
+  console.log('wheel', evt.originalEvent)
+
   const delta = evt.originalEvent.deltaY
-  // console.log('wheel', evt)
 
   if(controlType === 'modify-nodes') {
-    const coordinate = evt.coordinate;
+
+    const increaseLaneWidth = evt.originalEvent.ctrlKey
 
     const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.pixel).filter(feat => feat.get('fmsLaneType') === 'fmsNode');
     if (snappedFmsNodeFeatures.length === 0) {
-      throw Error('no fmsNode found at drawstart')
+      console.error('no fmsNode found at drawstart')
+      return
     }
     const fmsNode = snappedFmsNodeFeatures[0].get('fmsNode')
-    const deltaRadians = delta / 120 * Math.PI / 180
-    fmsNode.referenceHeading = fmsNode.referenceHeading + deltaRadians
+
+    if (increaseLaneWidth) {
+      const deltaStepMeter = 0.5
+      const deltaWidth = delta / 120 * deltaStepMeter
+      fmsNode.leftEdge.distanceFromReferencePoint += deltaWidth
+      fmsNode.rightEdge.distanceFromReferencePoint += deltaWidth
+
+    } else {
+      const deltaRadians = delta / 120 * Math.PI / 180
+      fmsNode.referenceHeading = fmsNode.referenceHeading + deltaRadians
+    }
     redrawFmsNodes(fmsNode.id)
     evt.stopPropagation()
     evt.preventDefault()
-
   }
-  // evt.preventDefault();
-  // const zoom = map.getView().getZoom();
-  // map.getView().setZoom(zoom + evt.deltaY * 0.01);
 })
 
 const laneWidthInput = document.getElementById('lane-width');
