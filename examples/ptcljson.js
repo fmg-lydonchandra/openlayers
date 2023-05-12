@@ -692,9 +692,9 @@ const redrawAllFmsLaneSections = () => {
 }
 
 const createBezierCenterLineGeom = (fmsLaneSection) => {
-  const startFmsNode = fmsLaneSection.startFmsNode
+  const startFmsNode = fmsNodes.find(node => node.id === fmsLaneSection.startFmsNodeId)
   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
-  const endFmsNode = fmsLaneSection.endFmsNode
+  const endFmsNode = fmsNodes.find(node => node.id === fmsLaneSection.endFmsNodeId)
   const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
   const bezierPt1 = startFmsNode.referencePoint
   const pt2 = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
@@ -747,9 +747,9 @@ const isEqualWithTolerance = (a, b) => {
 }
 
 const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
-  const startFmsNode = fmsLaneSection.startFmsNode
+  const startFmsNode =  fmsNodes.find(node => node.id === fmsLaneSection.startFmsNodeId)
   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
-  const endFmsNode = fmsLaneSection.endFmsNode
+  const endFmsNode = fmsNodes.find(node => node.id === fmsLaneSection.endFmsNodeId)
   const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
   const pathSection = {
     elements: []
@@ -1117,9 +1117,9 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
   const fmsLaneSection = {
     id: fmsPathSectionId,
-    startFmsNode,
+    startFmsNodeId: startFmsNode.id,
     startFmsNodeConnectorHeading,
-    endFmsNode,
+    endFmsNodeId: endFmsNode.id,
     endFmsNodeConnectorHeading,
     startWeight: PathSectionStartWeightMeter,
     endWeight: PathSectionEndWeightMeter,
