@@ -21,6 +21,7 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
+//todo: copy and paste nodes
 //todo: bidirectional
 //todo: predefined shape, like extension loop
 //todo: serialize out into proper file for ingestion into FMS
@@ -1289,6 +1290,28 @@ bezierStepsInput.onchange = function () {
   redrawAllFmsLaneSections()
 }
 
+function saveFile(blob, filename) {
+  const a = document.createElement('a');
+  document.body.appendChild(a);
+  const url = window.URL.createObjectURL(blob);
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, 0)
+}
+
+// onclick export-embomap-json
+const exportEmbomapJsonButton = document.getElementById('export-embomap-json');
+exportEmbomapJsonButton.onclick = () => {
+  const embomapJson = exportEmbomapJson()
+  const embomapJsonString = JSON.stringify(embomapJson)
+  const blob = new Blob([embomapJsonString], {type: "application/json;charset=utf-8"});
+  saveFile(blob, "embomap.json");
+}
+
 const toRotationFromEastRad = (rotationFromNorthRad) => {
   let rotationFromNorthDegrees = toDegrees(rotationFromNorthRad)
   let toRotationFromEastRad;
@@ -1303,3 +1326,10 @@ const toRotationFromEastRad = (rotationFromNorthRad) => {
   return toRotationFromEastRad
 }
 
+// not quite embomap json format, but using similar concept with Nodes and laneSections
+const exportEmbomapJson = () => {
+  return {
+    fmsNodes,
+    fmsLaneSections
+  }
+}
