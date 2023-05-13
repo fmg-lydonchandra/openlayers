@@ -50,7 +50,6 @@ let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('f
   },
   fmsNodes: [],
   fmsLaneSections: [],
-  fmsSectionBoundaries: [], // ribs
 };
 // fmsMap.units = {
 //   length: 'meters',
@@ -60,7 +59,6 @@ let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('f
 
 let fmsNodes = fmsMap.fmsNodes;
 let fmsLaneSections = fmsMap.fmsLaneSections;
-let fmsSectionBoundaries = fmsMap.fmsSectionBoundaries;
 
 const PathSectionStartWeightMeter = 10;
 const PathSectionEndWeightMeter = 10;
@@ -686,6 +684,12 @@ const createNodeConnectorGeom = (fmsNode) => {
 const recreateFmsMap = () => {
   // create fmsNode feature
   fmsNodes.forEach(fmsNode => {
+    if (fmsMap.units.projection !== map.getView().getProjection().getCode()) {
+      const fmsNodeRefPoint = new Point([fmsNode.referencePoint.x, fmsNode.referencePoint.y]).transform(fmsMap.units.projection, map.getView().getProjection().getCode()).getCoordinates()
+      fmsNode.referencePoint.x = fmsNodeRefPoint[0]
+      fmsNode.referencePoint.y = fmsNodeRefPoint[1]
+    }
+
     const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
     const fmsNodeFeature = new Feature({
       geometry: fmsNodeGeomCol,
@@ -730,6 +734,7 @@ const createFmsLaneSectionsFeatures = (fmsLaneSection) => {
   const centerLineCoords = centerLineGeom.getCoordinates();
 
   const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
+  fmsLaneSection.sectionBoundaries = ribsBoundaryGeomObj.sectionBoundaries
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
   const ribsFeature = new Feature({
     geometry: ribsGeom
@@ -837,9 +842,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
   const startFmsNodeConnectorHeading = fmsLaneSection.startFmsNodeConnectorHeading
   const endFmsNode = fmsNodes.find(node => node.id === fmsLaneSection.endFmsNodeId)
   const endFmsNodeConnectorHeading = fmsLaneSection.endFmsNodeConnectorHeading
-  const pathSection = {
-    elements: []
-  }
+  const sectionBoundaries = []
 
   const startFmsNodeWidth = startFmsNode.leftEdge.distanceFromReferencePoint + startFmsNode.rightEdge.distanceFromReferencePoint
   const endFmsNodeWidth = endFmsNode.leftEdge.distanceFromReferencePoint + endFmsNode.rightEdge.distanceFromReferencePoint
@@ -882,7 +885,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
 
     if (i === 1) {
       // first rib
-      let pathSectionElement = {
+      let sectionBoundary = {
         referencePoint: {x: prevCoord[0], y: prevCoord[1]},
         referenceHeading: startOrEndDirection.heading(),
         leftEdge: {
@@ -892,7 +895,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
           distanceFromReferencePoint: halfWidth,
         }
       }
-      pathSection.elements.push(pathSectionElement);
+      sectionBoundaries.push(sectionBoundary);
     }
     else if (i === centerLineCoords.length - 1) {
       let secondLasPathSectionElement = {
@@ -905,7 +908,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
           distanceFromReferencePoint: halfWidth,
         }
       }
-      pathSection.elements.push(secondLasPathSectionElement);
+      sectionBoundaries.push(secondLasPathSectionElement);
 
       // add last rib, at endFmsNode, must match endFmsNode heading and width
       let lastPathSectionElement = {
@@ -918,7 +921,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
           distanceFromReferencePoint: endFmsNodeWidth / 2,
         }
       }
-      pathSection.elements.push(lastPathSectionElement);
+      sectionBoundaries.push(lastPathSectionElement);
     } else {
       let pathSectionElement = {
         referencePoint: { x: prevCoord[0], y: prevCoord[1] },
@@ -930,20 +933,20 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
           distanceFromReferencePoint: halfWidth,
         }
       }
-      pathSection.elements.push(pathSectionElement);
+      sectionBoundaries.push(pathSectionElement);
     }
   }
 
   const ribsCoords = []
-  for (let i = 0; i < pathSection.elements.length; i++) {
-    const pathSectionElem = pathSection.elements[i]
-    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSectionElem)
+  for (let i = 0; i < sectionBoundaries.length; i++) {
+    const sectionBoundary = sectionBoundaries[i]
+    const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(sectionBoundary)
     ribsCoords.push(ribCoords)
   }
   const ribsGeom = PtclJSON.ribsToMultiLineString(ribsCoords)
   const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
 
-  return { ribsGeom, boundaryGeom }
+  return { ribsGeom, boundaryGeom, sectionBoundaries }
 }
 
 const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
@@ -955,6 +958,7 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   const centerLineCoords = centerLine.getCoordinates();
 
   const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
+  fmsLaneSection.sectionBoundaries = ribsBoundaryGeomObj.sectionBoundaries
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
   const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
   ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(ribsGeom)
@@ -1353,7 +1357,7 @@ function saveFile(blob, filename) {
 const exportEmbomapJsonButton = document.getElementById('export-embomap-json');
 exportEmbomapJsonButton.onclick = () => {
   const embomapJson = exportEmbomapJson()
-  const embomapJsonString = JSON.stringify(embomapJson)
+  const embomapJsonString = JSON.stringify(embomapJson, null, 2)
   const blob = new Blob([embomapJsonString], {type: "application/json;charset=utf-8"});
   saveFile(blob, "embomap.json");
 }
@@ -1362,6 +1366,7 @@ exportEmbomapJsonButton.onclick = () => {
 const saveFmsMapButton = document.getElementById('save-fms-map');
 saveFmsMapButton.onclick = () => {
    localStorage.setItem('fmsMap', JSON.stringify(fmsMap, null, 2))
+   // localStorage.setItem('fmsMap', JSON.stringify(exportEmbomapJson(), null, 2))
 }
 
 const toRotationFromEastRad = (rotationFromNorthRad) => {
@@ -1380,8 +1385,38 @@ const toRotationFromEastRad = (rotationFromNorthRad) => {
 
 // not quite embomap json format, but using similar concept with Nodes and laneSections
 const exportEmbomapJson = () => {
+  const mapViewProjCode = map.getView().getProjection().getCode()
+
+  const fmsNodesTransformed = fmsNodes.map(fmsNode => {
+    const transformedPoint = new Point([fmsNode.referencePoint.x, fmsNode.referencePoint.y]).transform(
+      mapViewProjCode,
+      'EPSG:28350').getCoordinates()
+
+    const fmsNodeCloned = JSON.parse(JSON.stringify(fmsNode))
+    fmsNodeCloned.referencePoint.x = transformedPoint[0]
+    fmsNodeCloned.referencePoint.y = transformedPoint[1]
+    return fmsNodeCloned
+  })
+
+  const fmsSectionBoundariesTransformed = fmsLaneSections.map(fmsLaneSection => {
+    const fmsLaneSectionCloned = JSON.parse(JSON.stringify(fmsLaneSection))
+    fmsLaneSectionCloned.sectionBoundaries.forEach(sectionBoundary => {
+      const transformedPoint = new Point([sectionBoundary.referencePoint.x, sectionBoundary.referencePoint.y]).transform(
+        mapViewProjCode,
+        'EPSG:28350').getCoordinates()
+      sectionBoundary.referencePoint.x = transformedPoint[0]
+      sectionBoundary.referencePoint.y = transformedPoint[1]
+    })
+    return fmsLaneSectionCloned
+  })
+
   return {
-    fmsNodes,
-    fmsLaneSections
+    units: {
+      length: 'meters',
+      angle: 'radians',
+      projection: 'EPSG:28350',
+    },
+    fmsNodes: fmsNodesTransformed,
+    fmsLaneSections: fmsSectionBoundariesTransformed
   }
 }
