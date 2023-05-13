@@ -43,10 +43,21 @@ let bezierSteps = 4;
  */
 let fmsPtclJsonPathSections;
 let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('fmsMap')) : {
+  units: {
+    length: 'meters',
+    angle: 'radians',
+    projection: 'EPSG:3857',
+  },
   fmsNodes: [],
   fmsLaneSections: [],
   fmsSectionBoundaries: [], // ribs
 };
+// fmsMap.units = {
+//   length: 'meters',
+//   angle: 'radians',
+//   projection: 'EPSG:3857',
+// }
+
 let fmsNodes = fmsMap.fmsNodes;
 let fmsLaneSections = fmsMap.fmsLaneSections;
 let fmsSectionBoundaries = fmsMap.fmsSectionBoundaries;
@@ -1350,7 +1361,7 @@ exportEmbomapJsonButton.onclick = () => {
 // onclick save-fms-map
 const saveFmsMapButton = document.getElementById('save-fms-map');
 saveFmsMapButton.onclick = () => {
-   localStorage.setItem('fmsMap', JSON.stringify(fmsMap))
+   localStorage.setItem('fmsMap', JSON.stringify(fmsMap, null, 2))
 }
 
 const toRotationFromEastRad = (rotationFromNorthRad) => {
