@@ -684,56 +684,60 @@ const recreateFmsMap = () => {
     })
     addNodesSource.addFeature(fmsNodeFeature)
 
-    const { sameHeadingGeom, oppositeHeadingGeom } = createNodeConnectorGeom(fmsNode)
-
-    const connectorHeadingSame = new Feature({
-      geometry: sameHeadingGeom,
-      fmsNodeId: fmsNode.id,
-      fmsLaneType: 'connector',
-      fmsNodeConnectorHeading: 'same'
-    })
-    nodeConnectorsSource.addFeature(connectorHeadingSame)
-
-    const connectorHeadingOpposite = new Feature({
-      geometry: oppositeHeadingGeom,
-      fmsNodeId: fmsNode.id,
-      fmsLaneType: 'connector',
-      fmsNodeConnectorHeading: 'opposite'
-    })
-    nodeConnectorsSource.addFeature(connectorHeadingOpposite)
+    createFmsNodesConnectorFeatures(fmsNode)
   });
 
-  // create fmsLaneSection feature
-  fmsLaneSections.forEach(fmsLaneSection => {
-    const fmsPathSectionId = fmsLaneSection.id
-    const centerLineGeom = createBezierCenterLineGeom(fmsLaneSection)
-    const centerLineFeature = new Feature({
-      geometry: centerLineGeom,
-    })
-    centerLineFeature.set('fmsLaneType', 'centerLine')
-    centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
-    centerLineFeature.set('fmsLaneSection', fmsLaneSection)
-    centerLineSource.addFeature(centerLineFeature)
-    const centerLineCoords = centerLineGeom.getCoordinates();
-    const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
-    const ribsGeom = ribsBoundaryGeomObj.ribsGeom
-    const ribsFeature = new Feature({
-      geometry: ribsGeom
-    })
-    ribsFeature.set('fmsLaneType', 'ribs')
-    ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
-    ribsFeature.set('fmsLaneSection', fmsLaneSection)
-    ribsSource.addFeature(ribsFeature)
-    const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
-    const boundaryFeature = new Feature({
-      geometry: boundaryGeom
-    })
-    boundaryFeature.set('fmsLaneType', 'boundary')
-    boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
-    boundaryFeature.set('fmsLaneSection', fmsLaneSection)
-    boundarySource.addFeature(boundaryFeature)
-  });
+  fmsLaneSections.forEach(fmsLaneSection => createFmsLaneSectionsFeatures(fmsLaneSection));
 }
+
+const createFmsNodesConnectorFeatures = (fmsNode) => {
+  const { sameHeadingGeom, oppositeHeadingGeom } = createNodeConnectorGeom(fmsNode)
+  const sameHeadingFeature = new Feature(sameHeadingGeom)
+  sameHeadingFeature.set('fmsNodeId', fmsNode.id)
+  sameHeadingFeature.set('fmsLaneType', 'connector')
+  sameHeadingFeature.set('fmsNodeConnectorHeading', 'same')
+  nodeConnectorsSource.addFeature(sameHeadingFeature)
+
+  const oppositeHeadingFeature = new Feature(oppositeHeadingGeom)
+  oppositeHeadingFeature.set('fmsNodeId', fmsNode.id)
+  oppositeHeadingFeature.set('fmsLaneType', 'connector')
+  oppositeHeadingFeature.set('fmsNodeConnectorHeading', 'opposite')
+  nodeConnectorsSource.addFeature(oppositeHeadingFeature)
+}
+
+const createFmsLaneSectionsFeatures = (fmsLaneSection) => {
+  const fmsPathSectionId = fmsLaneSection.id
+  const centerLineGeom = createBezierCenterLineGeom(fmsLaneSection)
+  const centerLineFeature = new Feature({
+    geometry: centerLineGeom,
+  })
+  centerLineFeature.set('fmsLaneType', 'centerLine')
+  centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
+  centerLineFeature.set('fmsLaneSection', fmsLaneSection)
+  centerLineSource.addFeature(centerLineFeature)
+
+  const centerLineCoords = centerLineGeom.getCoordinates();
+
+  const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
+  const ribsGeom = ribsBoundaryGeomObj.ribsGeom
+  const ribsFeature = new Feature({
+    geometry: ribsGeom
+  })
+  ribsFeature.set('fmsLaneType', 'ribs')
+  ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
+  ribsFeature.set('fmsLaneSection', fmsLaneSection)
+  ribsSource.addFeature(ribsFeature)
+
+  const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
+  const boundaryFeature = new Feature({
+    geometry: boundaryGeom
+  })
+  boundaryFeature.set('fmsLaneType', 'boundary')
+  boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
+  boundaryFeature.set('fmsLaneSection', fmsLaneSection)
+  boundarySource.addFeature(boundaryFeature)
+}
+
 const redrawFmsNodes = (fmsNodeId) => {
   const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
   const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
@@ -1125,21 +1129,7 @@ addNodes.on('drawend', function(evt) {
   evt.feature.set('fmsNode', fmsNode)
   evt.feature.set('fmsLaneType', 'fmsNode')
 
-  const { sameHeadingGeom, oppositeHeadingGeom } = createNodeConnectorGeom(fmsNode)
-
-  const sameHeadingFeature = new Feature(sameHeadingGeom)
-  sameHeadingFeature.set('fmsNode', fmsNode)
-  sameHeadingFeature.set('fmsNodeId', fmsNode.id)
-  sameHeadingFeature.set('fmsLaneType', 'connector')
-  sameHeadingFeature.set('fmsNodeConnectorHeading', 'same')
-  nodeConnectorsSource.addFeature(sameHeadingFeature)
-
-  const oppositeHeadingFeature = new Feature(oppositeHeadingGeom)
-  oppositeHeadingFeature.set('fmsNode', fmsNode)
-  oppositeHeadingFeature.set('fmsNodeId', fmsNode.id)
-  oppositeHeadingFeature.set('fmsLaneType', 'connector')
-  oppositeHeadingFeature.set('fmsNodeConnectorHeading', 'opposite')
-  nodeConnectorsSource.addFeature(oppositeHeadingFeature)
+  createFmsNodesConnectorFeatures(fmsNode)
 })
 
 const getLaneSectionsStyle = function(feature) {
@@ -1201,36 +1191,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   }
   fmsLaneSections.push(fmsLaneSection)
 
-  const centerLineGeom = createBezierCenterLineGeom(fmsLaneSection)
-
-  const centerLineFeature = new Feature({
-    geometry: centerLineGeom,
-  })
-  centerLineFeature.set('fmsLaneType', 'centerLine')
-  centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
-  centerLineFeature.set('fmsLaneSection', fmsLaneSection)
-  centerLineSource.addFeature(centerLineFeature)
-
-  const centerLineCoords = centerLineGeom.getCoordinates();
-
-  const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
-  const ribsGeom = ribsBoundaryGeomObj.ribsGeom
-  const ribsFeature = new Feature({
-    geometry: ribsGeom
-  })
-  ribsFeature.set('fmsLaneType', 'ribs')
-  ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
-  ribsFeature.set('fmsLaneSection', fmsLaneSection)
-  ribsSource.addFeature(ribsFeature)
-
-  const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
-  const boundaryFeature = new Feature({
-    geometry: boundaryGeom
-  })
-  boundaryFeature.set('fmsLaneType', 'boundary')
-  boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
-  boundaryFeature.set('fmsLaneSection', fmsLaneSection)
-  boundarySource.addFeature(boundaryFeature)
+  createFmsLaneSectionsFeatures(fmsLaneSection)
 
   setTimeout(() => {
     // remove drawn straight line from startNode to endNode, now bezier curve exists
