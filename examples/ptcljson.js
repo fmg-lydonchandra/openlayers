@@ -21,6 +21,7 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
+//todo: export in epsg:28350
 //todo: copy and paste nodes
 //todo: bidirectional
 //todo: predefined shape, like extension loop
@@ -40,9 +41,16 @@ let bezierSteps = 4;
  * Our data store, source of truth, draw, modify, delete update this
  * @type {{}}
  */
-let fmsPathSections;
-let fmsNodes = [];
-let fmsLaneSections = [];
+let fmsPtclJsonPathSections;
+let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('fmsMap')) : {
+  fmsNodes: [],
+  fmsLaneSections: [],
+  fmsSectionBoundaries: [], // ribs
+};
+let fmsNodes = fmsMap.fmsNodes;
+let fmsLaneSections = fmsMap.fmsLaneSections;
+let fmsSectionBoundaries = fmsMap.fmsSectionBoundaries;
+
 const PathSectionStartWeightMeter = 10;
 const PathSectionEndWeightMeter = 10;
 
@@ -343,7 +351,6 @@ const vectorPtcl = new VectorLayer({
   style: defaultStyle,
 });
 vectorPtcl.setVisible(true)
-// fmsPathSections = ptclSource.getFeatures();
 
 const bing = new TileLayer({
   visible: true,
@@ -403,12 +410,14 @@ map.on('loadend', function () {
   if (!feature) {
     return;
   }
-  fmsPathSections = ptclSource.getFormat().getFmsPathSections()
+  fmsPtclJsonPathSections = ptclSource.getFormat().getFmsPathSections()
 
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
   mapView.setZoom(mapView.getZoom() - 3)
   firstLoad = true;
+
+  recreateFmsMap()
 });
 
 const updateFmsNode = () => {
@@ -663,6 +672,49 @@ const createNodeConnectorGeom = (fmsNode) => {
   }
 }
 
+const recreateFmsMap = () => {
+  // create fmsNode feature
+  fmsNodes.forEach(fmsNode => {
+    const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
+    const fmsNodeFeature = new Feature({
+      geometry: fmsNodeGeomCol,
+      fmsNodeId: fmsNode.id,
+      fmsLaneType: 'fmsNode',
+      fmsNode: fmsNode
+    })
+    addNodesSource.addFeature(fmsNodeFeature)
+
+    const { sameHeadingGeom, oppositeHeadingGeom } = createNodeConnectorGeom(fmsNode)
+
+    const connectorHeadingSame = new Feature({
+      geometry: sameHeadingGeom,
+      fmsNodeId: fmsNode.id,
+      fmsLaneType: 'connector',
+      fmsNodeConnectorHeading: 'same'
+    })
+    nodeConnectorsSource.addFeature(connectorHeadingSame)
+
+    const connectorHeadingOpposite = new Feature({
+      geometry: oppositeHeadingGeom,
+      fmsNodeId: fmsNode.id,
+      fmsLaneType: 'connector',
+      fmsNodeConnectorHeading: 'opposite'
+    })
+    nodeConnectorsSource.addFeature(connectorHeadingOpposite)
+  });
+
+  // // create fmsLaneSection feature
+  // fmsLaneSections.forEach(fmsLaneSection => {
+  //   const fmsLaneSectionGeomCol = getFmsLaneSectionGeomCol(fmsLaneSection)
+  //   const fmsLaneSectionFeature = new Feature({
+  //     geometry: fmsLaneSectionGeomCol,
+  //     fmsLaneSectionId: fmsLaneSection.id,
+  //     fmsLaneType: 'fmsLaneSection',
+  //     fmsLaneSection: fmsLaneSection
+  //   })
+  //   addLaneSectionsSource.addFeature(fmsLaneSectionFeature)
+  // });
+}
 const redrawFmsNodes = (fmsNodeId) => {
   const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
   const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
@@ -1094,9 +1146,10 @@ addLaneSectionsDraw.on('drawstart', (evt) => {
     throw Error('no fmsNode found at drawstart')
   }
   console.log(snappedFmsNodeFeatures)
-  const fmsNode = snappedFmsNodeFeatures[0].get('fmsNode')
+  const fmsNodeId = snappedFmsNodeFeatures[0].get('fmsNodeId')
   const fmsNodeConnectorHeading = snappedFmsNodeFeatures[0].get('fmsNodeConnectorHeading')
-  evt.feature.set('startFmsNode', fmsNode)
+
+  evt.feature.set('startFmsNodeId', fmsNodeId)
   evt.feature.set('fmsNodeConnectorHeading', fmsNodeConnectorHeading)
 });
 
@@ -1107,11 +1160,13 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   if (endFmsNodeFeatures.length === 0) {
     throw Error('no fmsNode found at drawend')
   }
-  const endFmsNode = endFmsNodeFeatures[0].get('fmsNode')
+  const fmsNodeId = endFmsNodeFeatures[0].get('fmsNodeId')
+  const endFmsNode = fmsNodes.find(node => node.id === fmsNodeId)
   const endFmsNodeConnectorHeading = endFmsNodeFeatures[0].get('fmsNodeConnectorHeading')
   endFmsNode.prevSectionsId.push(fmsPathSectionId)
 
-  const startFmsNode = evt.feature.get('startFmsNode')
+  const startFmsNodeId = evt.feature.get('startFmsNodeId')
+  const startFmsNode = fmsNodes.find(node => node.id === startFmsNodeId)
   const startFmsNodeConnectorHeading = evt.feature.get('fmsNodeConnectorHeading')
   startFmsNode.nextSectionsId.push(fmsPathSectionId)
 
@@ -1310,6 +1365,12 @@ exportEmbomapJsonButton.onclick = () => {
   const embomapJsonString = JSON.stringify(embomapJson)
   const blob = new Blob([embomapJsonString], {type: "application/json;charset=utf-8"});
   saveFile(blob, "embomap.json");
+}
+
+// onclick save-fms-map
+const saveFmsMapButton = document.getElementById('save-fms-map');
+saveFmsMapButton.onclick = () => {
+   localStorage.setItem('fmsMap', JSON.stringify(fmsMap))
 }
 
 const toRotationFromEastRad = (rotationFromNorthRad) => {
