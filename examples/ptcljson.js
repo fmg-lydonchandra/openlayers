@@ -51,6 +51,8 @@ let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('f
   fmsNodes: [],
   fmsLaneSections: [],
 };
+const FmsProjection = 'EPSG:28350'
+
 // fmsMap.units = {
 //   length: 'meters',
 //   angle: 'radians',
@@ -298,7 +300,7 @@ const addLaneSectionLayer = new VectorLayer({
 // const ptclSource = new VectorSource({
 //   url: 'HazelmerePathSectionsOnlyPtcl.json',
 //   format: new PtclJSON({
-//     dataProjection: 'EPSG:28350',
+//     dataProjection: FmsProjection,
 //     style: style,
 //     mgrsSquare: {
 //       utm_zone: 50,
@@ -318,7 +320,7 @@ const addLaneSectionLayer = new VectorLayer({
 const ptclSource = new VectorSource({
   url: 'flinders.ptcl.json',
   format: new PtclJSON({
-    dataProjection: 'EPSG:28350',
+    dataProjection: FmsProjection,
     style: defaultStyle,
     mgrsSquare: {
       utm_zone: 50,
@@ -338,7 +340,7 @@ const ptclSource = new VectorSource({
 // const ptclSource = new VectorSource({
 //   url: 'flying_fish_original_ptcl_1.ptcl.json',
 //   format: new PtclJSON({
-//     dataProjection: 'EPSG:28350',
+//     dataProjection: FmsProjection,
 //     style: defaultStyle,
 //     mgrsSquare: {
 //       utm_zone: 50,
@@ -1390,7 +1392,7 @@ const exportEmbomapJson = () => {
   const fmsNodesTransformed = fmsNodes.map(fmsNode => {
     const transformedPoint = new Point([fmsNode.referencePoint.x, fmsNode.referencePoint.y]).transform(
       mapViewProjCode,
-      'EPSG:28350').getCoordinates()
+      FmsProjection).getCoordinates()
 
     const fmsNodeCloned = JSON.parse(JSON.stringify(fmsNode))
     fmsNodeCloned.referencePoint.x = transformedPoint[0]
@@ -1403,7 +1405,7 @@ const exportEmbomapJson = () => {
     fmsLaneSectionCloned.sectionBoundaries.forEach(sectionBoundary => {
       const transformedPoint = new Point([sectionBoundary.referencePoint.x, sectionBoundary.referencePoint.y]).transform(
         mapViewProjCode,
-        'EPSG:28350').getCoordinates()
+        FmsProjection).getCoordinates()
       sectionBoundary.referencePoint.x = transformedPoint[0]
       sectionBoundary.referencePoint.y = transformedPoint[1]
     })
@@ -1414,7 +1416,7 @@ const exportEmbomapJson = () => {
     units: {
       length: 'meters',
       angle: 'radians',
-      projection: 'EPSG:28350',
+      projection: FmsProjection,
     },
     fmsNodes: fmsNodesTransformed,
     fmsLaneSections: fmsSectionBoundariesTransformed
