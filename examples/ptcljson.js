@@ -703,17 +703,36 @@ const recreateFmsMap = () => {
     nodeConnectorsSource.addFeature(connectorHeadingOpposite)
   });
 
-  // // create fmsLaneSection feature
-  // fmsLaneSections.forEach(fmsLaneSection => {
-  //   const fmsLaneSectionGeomCol = getFmsLaneSectionGeomCol(fmsLaneSection)
-  //   const fmsLaneSectionFeature = new Feature({
-  //     geometry: fmsLaneSectionGeomCol,
-  //     fmsLaneSectionId: fmsLaneSection.id,
-  //     fmsLaneType: 'fmsLaneSection',
-  //     fmsLaneSection: fmsLaneSection
-  //   })
-  //   addLaneSectionsSource.addFeature(fmsLaneSectionFeature)
-  // });
+  // create fmsLaneSection feature
+  fmsLaneSections.forEach(fmsLaneSection => {
+    const fmsPathSectionId = fmsLaneSection.id
+    const centerLineGeom = createBezierCenterLineGeom(fmsLaneSection)
+    const centerLineFeature = new Feature({
+      geometry: centerLineGeom,
+    })
+    centerLineFeature.set('fmsLaneType', 'centerLine')
+    centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
+    centerLineFeature.set('fmsLaneSection', fmsLaneSection)
+    centerLineSource.addFeature(centerLineFeature)
+    const centerLineCoords = centerLineGeom.getCoordinates();
+    const ribsBoundaryGeomObj = calculateRibsAndBoundaryGeom(fmsLaneSection, centerLineCoords);
+    const ribsGeom = ribsBoundaryGeomObj.ribsGeom
+    const ribsFeature = new Feature({
+      geometry: ribsGeom
+    })
+    ribsFeature.set('fmsLaneType', 'ribs')
+    ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
+    ribsFeature.set('fmsLaneSection', fmsLaneSection)
+    ribsSource.addFeature(ribsFeature)
+    const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
+    const boundaryFeature = new Feature({
+      geometry: boundaryGeom
+    })
+    boundaryFeature.set('fmsLaneType', 'boundary')
+    boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
+    boundaryFeature.set('fmsLaneSection', fmsLaneSection)
+    boundarySource.addFeature(boundaryFeature)
+  });
 }
 const redrawFmsNodes = (fmsNodeId) => {
   const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
