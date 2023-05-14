@@ -888,6 +888,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     if (i === 1) {
       // first rib
       let sectionBoundary = {
+        order: i-1,
         referencePoint: {x: prevCoord[0], y: prevCoord[1]},
         referenceHeading: startOrEndDirection.heading(),
         leftEdge: {
@@ -901,6 +902,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
     }
     else if (i === centerLineCoords.length - 1) {
       let secondLasPathSectionElement = {
+        order: i-1,
         referencePoint: { x: prevCoord[0], y: prevCoord[1] },
         referenceHeading: direction.heading(),
         leftEdge: {
@@ -914,6 +916,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
 
       // add last rib, at endFmsNode, must match endFmsNode heading and width
       let lastPathSectionElement = {
+        order: i,
         referencePoint: { x: curCoord[0], y: curCoord[1] },
         referenceHeading: startOrEndDirection.heading(),
         leftEdge: {
@@ -926,6 +929,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
       sectionBoundaries.push(lastPathSectionElement);
     } else {
       let pathSectionElement = {
+        order: i-1,
         referencePoint: { x: prevCoord[0], y: prevCoord[1] },
         referenceHeading: direction.heading(),
         leftEdge: {
@@ -1369,6 +1373,36 @@ const saveFmsMapButton = document.getElementById('save-fms-map');
 saveFmsMapButton.onclick = () => {
    localStorage.setItem('fmsMap', JSON.stringify(fmsMap, null, 2))
    // localStorage.setItem('fmsMap', JSON.stringify(exportEmbomapJson(), null, 2))
+}
+const mineModelServiceHostUrl = 'http://localhost:5100'
+const laneEmbomapUrl = mineModelServiceHostUrl + '/laneEmbomap'
+
+// onclick sync-fms-map
+const syncFmsMapButton = document.getElementById('sync-fms-map');
+syncFmsMapButton.onclick = () => {
+  const fmsMapString = localStorage.getItem('fmsMap')
+
+  if (!fmsMapString) {
+    console.error("No fmsMap in localStorage")
+    return;
+  }
+
+  const fmsMap = exportEmbomapJson()
+  const payload = {
+    laneNodes: fmsMap.fmsNodes,
+    laneSections: fmsMap.fmsLaneSections
+  }
+  fetch(laneEmbomapUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  }).then(res => {
+    console.log('Synced fmsMap to mine-model-service')
+  }).catch(err => {
+    console.error(err)
+  })
 }
 
 const toRotationFromEastRad = (rotationFromNorthRad) => {
