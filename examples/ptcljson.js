@@ -79,7 +79,7 @@ const getDirectionArrowStyle = function(feature) {
   }
   const centerLine = feature.getGeometry();
 
-  const midPointIx = Math.floor(centerLine.getCoordinates().length / 2)
+  const midPointIx = Math.floor(centerLine.getCoordinates().length / 2) + 1
   const midPointCoord = centerLine.getCoordinates()[midPointIx];
   styles.push(new Style({
       geometry: new Point(midPointCoord),
@@ -1363,6 +1363,12 @@ const directionArrow = document.getElementById('direction-arrow');
 directionArrow.onclick = () => {
   showDirectionArrow = directionArrow.checked
   centerLineLayer.changed()
+}
+
+// onclick show-aerial
+const showAerial = document.getElementById('show-aerial');
+showAerial.onclick = () => {
+  bing.setVisible(showAerial.checked)
 }
 
 // onchange bezier-steps
