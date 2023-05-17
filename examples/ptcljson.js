@@ -488,9 +488,32 @@ window.deleteFmsLaneSection = deleteFmsLaneSection.bind(this);
 const makeBidirectional = () => {
   const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
-  const startFmsNodeId = fmsLaneSection.startFmsNodeId;
-  const endFmsNodeId = fmsLaneSection.endFmsNodeId;
+  const reversedFmsLaneSection = {
+    id: uuidv4(),
+    startFmsNodeId: fmsLaneSection.endFmsNodeId,
+    startFmsNodeConnectorHeading: fmsLaneSection.endFmsNodeConnectorHeading,
+    startWeight: fmsLaneSection.endWeight,
 
+    endFmsNodeId: fmsLaneSection.startFmsNodeId,
+    endFmsNodeConnectorHeading: fmsLaneSection.startFmsNodeConnectorHeading,
+    endWeight: fmsLaneSection.startWeight,
+    bezierSteps: fmsLaneSection.bezierSteps,
+  }
+  fmsLaneSections.push(reversedFmsLaneSection)
+  const centerLineFeature = new Feature({
+    fmsLaneSectionId: reversedFmsLaneSection.id,
+  })
+  centerLineSource.addFeature(centerLineFeature)
+
+  const ribsFeature = new Feature({
+    fmsLaneSectionId: reversedFmsLaneSection.id,
+  })
+  ribsSource.addFeature(ribsFeature)
+
+  const boundaryFeature = new Feature({
+    fmsLaneSectionId: reversedFmsLaneSection.id,
+  })
+  boundarySource.addFeature(boundaryFeature)
 }
 window.makeBidirectional = makeBidirectional.bind(this);
 
@@ -1172,7 +1195,6 @@ const getLaneSectionsStyle = function(feature) {
 const addLaneSectionsDraw = new Draw({
   type: 'LineString',
   source: addLaneSectionSource,
-  // geometryFunction: drawLaneSectionsGeomFn,
   style: getLaneSectionsStyle
 })
 
