@@ -21,9 +21,8 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 
-//todo: export in epsg:28350
+//todo: freehand drawing, automagically convert to bezier
 //todo: copy and paste nodes
-//todo: bidirectional
 //todo: predefined shape, like extension loop
 //todo: serialize out into proper file for ingestion into FMS
 //todo: split pathSection into multiple pathSections if it is too long
