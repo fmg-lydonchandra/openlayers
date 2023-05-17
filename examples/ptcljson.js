@@ -241,7 +241,6 @@ const centerLineLayer = new VectorLayer({
 const ribsSource = new VectorSource();
 const ribsLayer = new VectorLayer({
   source: ribsSource,
-  // style: getRibsRotationStyle
 });
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
@@ -464,13 +463,13 @@ const deleteFmsLaneSection = () => {
 
     fmsLaneSections.splice(fmsLaneSectionIx, 1);
 
-    const centerLineFeature = centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId)
+    const centerLineFeature = centerLineSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId)
     centerLineSource.removeFeature(centerLineFeature);
 
-    const ribsFeature = ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId)
+    const ribsFeature = ribsSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId)
     ribsSource.removeFeature(ribsFeature);
 
-    const boundaryFeature = boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId)
+    const boundaryFeature = boundarySource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId)
     boundarySource.removeFeature(boundaryFeature);
 
     fmsNodes.forEach(fmsNode => {
@@ -485,6 +484,15 @@ const deleteFmsLaneSection = () => {
   }
 }
 window.deleteFmsLaneSection = deleteFmsLaneSection.bind(this);
+
+const makeBidirectional = () => {
+  const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
+  const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
+  const startFmsNodeId = fmsLaneSection.startFmsNodeId;
+  const endFmsNodeId = fmsLaneSection.endFmsNodeId;
+
+}
+window.makeBidirectional = makeBidirectional.bind(this);
 
 map.on('contextmenu', (evt) => {
   console.log('contextmenu', evt)
@@ -505,9 +513,9 @@ map.on('contextmenu', (evt) => {
     <div>
       <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled></p>
       <p>Rotation (degree from east):
-        <input id='fms-node-heading' type='text' value='${fmsNode.referenceHeading}'></p>
+        <input id='fms-node-heading' type='text' size='5' value='${fmsNode.referenceHeading}'></p>
       <p>Width:
-        <input type='text' id='fms-node-width'
+        <input type='text' id='fms-node-width' size='5'
           value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'
       </p>
       <p>Prev Sections: ${fmsNode.prevSectionsId.join(",")} </p>
@@ -529,12 +537,13 @@ map.on('contextmenu', (evt) => {
     const innerHTML = `
     <div>
       <p>Lane: <input type='text' id='fms-lane-section-id' value='${fmsLaneSection.id}' disabled></p>
-      <p>Start Weight: <input id='fms-lane-section-start-weight' type='text' value='${fmsLaneSection.startWeight}'></p>
-      <p>End Weight: <input id='fms-lane-section-end-weight' type='text' value='${fmsLaneSection.endWeight}'></p>
-      <p>Bezier Steps: <input id='fms-lane-section-bezier-steps' type='text' value='${fmsLaneSection.bezierSteps}'></p>
+      <p>Start Weight: <input id='fms-lane-section-start-weight' type='text' size='5' value='${fmsLaneSection.startWeight}'></p>
+      <p>End Weight: <input id='fms-lane-section-end-weight' type='text' size='5' value='${fmsLaneSection.endWeight}'></p>
+      <p>Bezier Steps: <input id='fms-lane-section-bezier-steps' type='text' size='5' value='${fmsLaneSection.bezierSteps}'></p>
 
       <button onclick='window.updateFmsLaneSection()'>Set</button>
       <button onclick='window.deleteFmsLaneSection()'>Delete</button>
+      <button onclick='window.makeBidirectional()'>Make Bidirectional</button>
     </div>    `
 
     content.innerHTML = innerHTML;
@@ -548,7 +557,6 @@ let snap = new Snap({
 });
 let ptclSnap = new Snap({
   source: ribsSource,
-  // source: ptclSource,
 });
 let centerLineSnap = new Snap({
   source: centerLineSource,
@@ -723,13 +731,13 @@ const createFmsNodesConnectorFeatures = (fmsNode) => {
 }
 
 const createFmsLaneSectionsFeatures = (fmsLaneSection) => {
-  const fmsPathSectionId = fmsLaneSection.id
+  const fmsLaneSectionId = fmsLaneSection.id
   const centerLineGeom = createBezierCenterLineGeom(fmsLaneSection)
   const centerLineFeature = new Feature({
     geometry: centerLineGeom,
   })
   centerLineFeature.set('fmsLaneType', 'centerLine')
-  centerLineFeature.set('fmsPathSectionId', fmsPathSectionId)
+  centerLineFeature.set('fmsLaneSectionId', fmsLaneSectionId)
   centerLineFeature.set('fmsLaneSection', fmsLaneSection)
   centerLineSource.addFeature(centerLineFeature)
 
@@ -742,7 +750,7 @@ const createFmsLaneSectionsFeatures = (fmsLaneSection) => {
     geometry: ribsGeom
   })
   ribsFeature.set('fmsLaneType', 'ribs')
-  ribsFeature.set('fmsPathSectionId', fmsPathSectionId)
+  ribsFeature.set('fmsLaneSectionId', fmsLaneSectionId)
   ribsFeature.set('fmsLaneSection', fmsLaneSection)
   ribsSource.addFeature(ribsFeature)
 
@@ -751,7 +759,7 @@ const createFmsLaneSectionsFeatures = (fmsLaneSection) => {
     geometry: boundaryGeom
   })
   boundaryFeature.set('fmsLaneType', 'boundary')
-  boundaryFeature.set('fmsPathSectionId', fmsPathSectionId)
+  boundaryFeature.set('fmsLaneSectionId', fmsLaneSectionId)
   boundaryFeature.set('fmsLaneSection', fmsLaneSection)
   boundarySource.addFeature(boundaryFeature)
 }
@@ -959,7 +967,7 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
 
   const centerLine = createBezierCenterLineGeom(fmsLaneSection)
-  centerLineSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(centerLine)
+  centerLineSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId).setGeometry(centerLine)
 
   const centerLineCoords = centerLine.getCoordinates();
 
@@ -967,8 +975,8 @@ const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
   fmsLaneSection.sectionBoundaries = ribsBoundaryGeomObj.sectionBoundaries
   const ribsGeom = ribsBoundaryGeomObj.ribsGeom
   const boundaryGeom = ribsBoundaryGeomObj.boundaryGeom
-  ribsSource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(ribsGeom)
-  boundarySource.getFeatures().find(feat => feat.get('fmsPathSectionId') === fmsLaneSectionId).setGeometry(boundaryGeom)
+  ribsSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId).setGeometry(ribsGeom)
+  boundarySource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSectionId).setGeometry(boundaryGeom)
 }
 
 const createNodesGeomCol = function(coordinates, options) {
@@ -1169,7 +1177,7 @@ const addLaneSectionsDraw = new Draw({
 })
 
 addLaneSectionsDraw.on('drawstart', (evt) => {
-  evt.feature.set('fmsPathSectionId', uuidv4())
+  evt.feature.set('fmsLaneSectionId', uuidv4())
   evt.feature.set('fmsLaneType', 'pathSection')
   const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'connector');
   if (snappedFmsNodeFeatures.length === 0) {
@@ -1184,7 +1192,7 @@ addLaneSectionsDraw.on('drawstart', (evt) => {
 });
 
 addLaneSectionsDraw.on('drawend', (evt) => {
-  const fmsPathSectionId = evt.feature.get('fmsPathSectionId')
+  const fmsLaneSectionId = evt.feature.get('fmsLaneSectionId')
 
   const endFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'connector');
   if (endFmsNodeFeatures.length === 0) {
@@ -1193,15 +1201,15 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   const fmsNodeId = endFmsNodeFeatures[0].get('fmsNodeId')
   const endFmsNode = fmsNodes.find(node => node.id === fmsNodeId)
   const endFmsNodeConnectorHeading = endFmsNodeFeatures[0].get('fmsNodeConnectorHeading')
-  endFmsNode.prevSectionsId.push(fmsPathSectionId)
+  endFmsNode.prevSectionsId.push(fmsLaneSectionId)
 
   const startFmsNodeId = evt.feature.get('startFmsNodeId')
   const startFmsNode = fmsNodes.find(node => node.id === startFmsNodeId)
   const startFmsNodeConnectorHeading = evt.feature.get('fmsNodeConnectorHeading')
-  startFmsNode.nextSectionsId.push(fmsPathSectionId)
+  startFmsNode.nextSectionsId.push(fmsLaneSectionId)
 
   const fmsLaneSection = {
-    id: fmsPathSectionId,
+    id: fmsLaneSectionId,
     startFmsNodeId: startFmsNode.id,
     startFmsNodeConnectorHeading,
     endFmsNodeId: endFmsNode.id,
@@ -1405,6 +1413,12 @@ syncFmsMapButton.onclick = () => {
   })
 }
 
+
+// onclick show-section-boundaries
+const showSectionBoundariesButton = document.getElementById('show-section-boundaries');
+showSectionBoundariesButton.onclick = () => {
+  ribsLayer.setVisible(showSectionBoundariesButton.checked)
+}
 const toRotationFromEastRad = (rotationFromNorthRad) => {
   let rotationFromNorthDegrees = toDegrees(rotationFromNorthRad)
   let toRotationFromEastRad;
@@ -1456,3 +1470,4 @@ const exportEmbomapJson = () => {
     fmsLaneSections: fmsSectionBoundariesTransformed
   }
 }
+
