@@ -14,12 +14,13 @@ import {Draw, Modify, Select, Snap} from '../src/ol/interaction.js';
 import {v4 as uuidv4} from 'uuid';
 import {Bezier} from 'bezier-js';
 
-import {GeometryCollection, LineString, MultiPoint, Point} from '../src/ol/geom.js';
+import {GeometryCollection, LineString, MultiLineString, MultiPoint, Point} from '../src/ol/geom.js';
 import {getCenter} from '../src/ol/extent.js';
 import {toDegrees, toRadians} from '../src/ol/math.js';
 import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
+import fitCurve from 'fit-curve';
 
 //todo: freehand drawing, automagically convert to bezier
 //todo: copy and paste nodes
@@ -232,6 +233,11 @@ const getRibsRotationStyle = function (feature) {
   return styles;
 }
 
+const testSource = new VectorSource();
+const testLayer = new VectorLayer({
+  source: testSource,
+})
+
 const centerLineSource = new VectorSource();
 const centerLineLayer = new VectorLayer({
   source: centerLineSource,
@@ -400,7 +406,7 @@ closer.onclick = function () {
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer],
+  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer, testLayer],
   overlays: [overlay],
   target: 'map',
   view: new View({
@@ -1148,24 +1154,6 @@ const getNodesStyle = function(feature) {
   return styles;
 }
 
-// const modifyNodes = new Modify({
-//   source: addNodesSource,
-//   // style: getNodesStyle
-// })
-// modifyNodes.on('modifystart', (evt) => {
-//   // event.features.forEach(function (feature) {
-//   //   feature.set(
-//   //     'modifyGeometry',
-//   //     {geometry: feature.getGeometry().clone()},
-//   //     true
-//   //   );
-//   // });
-// })
-//
-// modifyNodes.on('modifyend', (evt) => {
-//   console.log('modifyend', evt)
-// })
-
 const addNodes = new Draw({
   type: 'Point',
   source: addNodesSource,
@@ -1446,6 +1434,31 @@ const showSectionBoundariesButton = document.getElementById('show-section-bounda
 showSectionBoundariesButton.onclick = () => {
   ribsLayer.setVisible(showSectionBoundariesButton.checked)
 }
+
+// onclick fit-bezier
+const fitBezierButton = document.getElementById('fit-bezier');
+fitBezierButton.onclick = () => {
+  const points = fmsNodes.map(fmsNode => [fmsNode.referencePoint.x, fmsNode.referencePoint.y])
+  const error = 10
+  const bezierCurves = fitCurve(points, error);
+  console.log('bezierCurves', bezierCurves)
+
+  const fitted = new MultiLineString([[]])
+  bezierCurves.forEach(bezierCurve => {
+      const centerLineBezier = new Bezier(
+        bezierCurve[0][0], bezierCurve[0][1],
+        bezierCurve[1][0], bezierCurve[1][1],
+        bezierCurve[2][0], bezierCurve[2][1],
+        bezierCurve[3][0], bezierCurve[3][1],
+      );
+      const centerLineBezierPoints = centerLineBezier.getLUT(bezierSteps)
+      const centerLineBezierCoords = centerLineBezierPoints.map(centerLineBezierPoint => [centerLineBezierPoint.x, centerLineBezierPoint.y])
+      fitted.appendLineString(new LineString(centerLineBezierCoords))
+    })
+  testSource.addFeature(new Feature(fitted))
+}
+
+
 const toRotationFromEastRad = (rotationFromNorthRad) => {
   let rotationFromNorthDegrees = toDegrees(rotationFromNorthRad)
   let toRotationFromEastRad;
@@ -1498,3 +1511,11 @@ const exportEmbomapJson = () => {
   }
 }
 
+
+const points = [[0, 0], [10, 10], [10, 0], [20, 0]];
+const error = 50; // The smaller the number - the much closer spline should be
+
+var bezierCurves = fitCurve(points, error);
+console.log(bezierCurves)
+// bezierCurves[0] === [[0, 0], [20.27317402, 20.27317402], [-1.24665147, 0], [20, 0]]
+// where each element is [x, y] and elements are [first-point, control-point-1, control-point-2, second-point]
