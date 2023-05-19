@@ -406,7 +406,12 @@ closer.onclick = function () {
 
 const map = new Map({
   controls: defaultControls(),
-  layers: [ bing, vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer, ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer, testLayer],
+  layers: [
+    bing,
+    vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer,
+    ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer,
+    testLayer
+  ],
   overlays: [overlay],
   target: 'map',
   view: new View({
@@ -829,32 +834,34 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
   const pt2 = new p5.Vector(startFmsNode.referencePoint.x, startFmsNode.referencePoint.y)
   let bezierPt2;
   if (startFmsNodeConnectorHeading === 'same') {
-    const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
-    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+    let pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+    let pt2direction2 = p5.Vector.rotate(pt2direction, fmsLaneSection.startWeightHeading)
+    const pt2startWeight = p5.Vector.mult(pt2direction2, fmsLaneSection.startWeight)
     bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
   } else if (startFmsNodeConnectorHeading === 'opposite') {
     const pt2direction = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
-    const pt2startWeight = p5.Vector.mult(pt2direction, fmsLaneSection.startWeight)
+    // todo: check this calc
+    let pt2direction2 = p5.Vector.rotate(pt2direction, fmsLaneSection.startWeightHeading)
+    const pt2startWeight = p5.Vector.mult(pt2direction2, fmsLaneSection.startWeight)
     bezierPt2 = p5.Vector.add(pt2, pt2startWeight)
-  }
-  else {
-    throw new Error('startFmsNodeConnectorHeading must be same or opposite')
   }
 
   const pt3 = new p5.Vector(endFmsNode.referencePoint.x, endFmsNode.referencePoint.y)
   let bezierPt3;
   if (endFmsNodeConnectorHeading === 'same') {
     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
-    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    // todo: check this calc
+    const pt3direction2 = p5.Vector.rotate(pt3direction, fmsLaneSection.endWeightHeading)
+    const pt3endWeight = p5.Vector.mult(pt3direction2, fmsLaneSection.endWeight)
+
     bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
   }
   else if (endFmsNodeConnectorHeading === 'opposite') {
     const pt3direction = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
-    const pt3endWeight = p5.Vector.mult(pt3direction, fmsLaneSection.endWeight)
+    // todo: check this calc
+    const pt3direction2 = p5.Vector.rotate(pt3direction, fmsLaneSection.endWeightHeading)
+    const pt3endWeight = p5.Vector.mult(pt3direction2, fmsLaneSection.endWeight)
     bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
-  }
-  else {
-    throw new Error('endFmsNodeConnectorHeading must be same or opposite')
   }
 
   const bezierPt4 = endFmsNode.referencePoint
@@ -1171,6 +1178,102 @@ addNodes.on('drawend', function(evt) {
   createFmsNodesConnectorFeatures(fmsNode)
 })
 
+const addNodesAndLanesDraw = new Draw({
+  type: 'LineString',
+  source: testSource,
+})
+addNodesAndLanesDraw.on('drawstart', (evt) => {
+
+})
+
+addNodesAndLanesDraw.on('drawend', (evt) => {
+  const coordinates = evt.feature.getGeometry().getCoordinates();
+  const error = 10
+  // bezierCurves is an array of 4 points
+  const bezierCurves = fitCurve(coordinates, error)
+  console.log('coordinates', coordinates)
+  console.log('bezierCurves', bezierCurves)
+  const tempFmsNodes = [];
+  //1. create fmsNodes from bezierCurves, and create fmsNode features
+  for (let i = 0; i < bezierCurves.length; i++) {
+    const bezierCurve = bezierCurves[i];
+    const curCoord = bezierCurve[3]
+    const prevCoord = bezierCurve[0]
+    let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
+    let cur = new p5.Vector(curCoord[0], curCoord[1])
+    let direction = p5.Vector.sub(cur, prev)
+
+    const fmsNode = {
+      id: uuidv4(),
+      referencePoint: { x: bezierCurve[0][0], y: bezierCurve[0][1] },
+      referenceHeading: direction.heading(),
+      leftEdge: {
+        distanceFromReferencePoint: halfLaneWidthMeter,
+      },
+      rightEdge: {
+        distanceFromReferencePoint: halfLaneWidthMeter,
+      },
+      nextSectionsId : [],
+      prevSectionsId: []
+    }
+    tempFmsNodes.push(fmsNode)
+    // visualize control points
+    const control1 = new Point(bezierCurve[1])
+    const control2 = new Point(bezierCurve[2])
+    const control1Feature = new Feature({
+      geometry: control1
+    })
+    const control2Feature = new Feature({
+      geometry: control2
+    })
+    testSource.addFeature(control1Feature)
+    testSource.addFeature(control2Feature)
+
+    if (i === bezierCurves.length - 1) {
+      // add last point of last bezier curve
+      const fmsNode = {
+        id: uuidv4(),
+        referencePoint: { x: bezierCurve[3][0], y: bezierCurve[3][1] },
+        referenceHeading: direction.heading(),
+        leftEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        },
+        rightEdge: {
+          distanceFromReferencePoint: halfLaneWidthMeter,
+        },
+        nextSectionsId : [],
+        prevSectionsId: []
+      }
+      tempFmsNodes.push(fmsNode)
+    }
+  }
+  fmsNodes.push(...tempFmsNodes)
+
+  for (let i = 0; i < tempFmsNodes.length-1; i++) {
+    // const bezierCurve = bezierCurves[i];
+    const fmsNode = tempFmsNodes[i];
+    const fmsLaneSection = {
+      id: uuidv4(),
+      startFmsNodeId: fmsNode.id,
+      startFmsNodeConnectorHeading: 'same',
+      endFmsNodeId: tempFmsNodes[i + 1].id,
+      endFmsNodeConnectorHeading: 'opposite',
+      startWeight: 10,
+      startWeightHeading: 0,  //todo: calculate heading
+      endWeight: 10,
+      endWeightHeading: 0, //todo: calculate heading
+      bezierSteps
+    }
+    fmsLaneSections.push(fmsLaneSection)
+  }
+
+
+
+    //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
+
+  recreateFmsMap()
+})
+
 const getLaneSectionsStyle = function(feature) {
   const styles = [defaultStyle];
   if(!feature) {
@@ -1217,14 +1320,16 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   const startFmsNodeConnectorHeading = evt.feature.get('fmsNodeConnectorHeading')
   startFmsNode.nextSectionsId.push(fmsLaneSectionId)
 
-  const fmsLaneSection = {
+  const v = {
     id: fmsLaneSectionId,
     startFmsNodeId: startFmsNode.id,
     startFmsNodeConnectorHeading,
     endFmsNodeId: endFmsNode.id,
     endFmsNodeConnectorHeading,
     startWeight: PathSectionStartWeightMeter,
+    startWeightHeading: 0,
     endWeight: PathSectionEndWeightMeter,
+    endWeightHeading: 0,
     bezierSteps
   }
   fmsLaneSections.push(fmsLaneSection)
@@ -1249,7 +1354,7 @@ let drawAndSnapInteractions = [
   select,
 ]
 
-map.addInteraction(addNodes);
+map.addInteraction(addNodesAndLanesDraw);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
 
@@ -1266,12 +1371,19 @@ typeSelect.onchange = function () {
   switch (controlType) {
     case 'add-nodes':
       map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodesAndLanesDraw)
 
       map.addInteraction(addNodes)
       map.addInteraction(snap);
       map.addInteraction(ptclSnap)
       modifyDelete = false
       break;
+    case 'add-nodes-and-lanes':
+      map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodes)
+      map.addInteraction(addNodesAndLanesDraw)
+      map.addInteraction(addNodesSnap)
+      break
     case 'modify-nodes':
       modifyFmsLaneType = 'fmsNode'
       map.removeInteraction(addLaneSectionsDraw)
@@ -1299,8 +1411,8 @@ typeSelect.onchange = function () {
       break;
     case 'modify-lane-sections':
       modifyFmsLaneType = 'modify-lane-sections'
-      // map.addInteraction(modifyNodes)
       map.removeInteraction(addNodes)
+      map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addLaneSectionsDraw)
       map.addInteraction(centerLineSnap)
       modifyDelete = false
