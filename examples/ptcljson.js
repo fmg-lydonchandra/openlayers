@@ -546,7 +546,7 @@ map.on('contextmenu', (evt) => {
     <div>
       <p>Node: <input type='text' id='fms-node-id' value='${fmsNode.id}' disabled></p>
       <p>Rotation (degree from east):
-        <input id='fms-node-heading' type='text' size='5' value='${fmsNode.referenceHeading}'></p>
+        <input id='fms-node-heading' type='text' size='5' value='${toDegrees(fmsNode.referenceHeading)}'></p>
       <p>Width:
         <input type='text' id='fms-node-width' size='5'
           value='${fmsNode.leftEdge.distanceFromReferencePoint + fmsNode.rightEdge.distanceFromReferencePoint}'
@@ -1196,17 +1196,22 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
   const error = 10
   // bezierCurves is an array of 4 points
   const bezierCurves = fitCurve(coordinates, error)
-  console.log('coordinates', coordinates)
-  console.log('bezierCurves', bezierCurves)
   const tempFmsNodes = [];
   //1. create fmsNodes from bezierCurves, and create fmsNode features
   for (let i = 0; i < bezierCurves.length; i++) {
     const bezierCurve = bezierCurves[i];
-    const curCoord = bezierCurve[3]
-    const prevCoord = bezierCurve[0]
-    let prev = new p5.Vector(prevCoord[0], prevCoord[1]);
-    let cur = new p5.Vector(curCoord[0], curCoord[1])
-    let direction = p5.Vector.sub(cur, prev)
+    const endPointCoord = bezierCurve[3]
+    const startPointCoord = bezierCurve[0]
+    // let prev = new p5.Vector(startPointCoord[0], startPointCoord[1]);
+    // let cur = new p5.Vector(endPointCoord[0], endPointCoord[1])
+    // // let direction = p5.Vector.sub(cur, prev)
+    let startIdx = coordinates.findIndex(
+      xy => isEqualWithTolerance(xy[0], startPointCoord[0]) &&
+            isEqualWithTolerance(xy[1], startPointCoord[1])
+    )
+    console.log('startIdx', startIdx)
+    let nextDrawnCoord = new p5.Vector(coordinates[startIdx + 1][0], coordinates[startIdx + 1][1])
+    let direction = p5.Vector.sub(nextDrawnCoord, startPointCoord)
 
     const fmsNode = {
       id: uuidv4(),
@@ -1222,17 +1227,18 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
       prevSectionsId: []
     }
     tempFmsNodes.push(fmsNode)
+
     // visualize control points
-    const control1 = new Point(bezierCurve[1])
-    const control2 = new Point(bezierCurve[2])
-    const control1Feature = new Feature({
-      geometry: control1
-    })
-    const control2Feature = new Feature({
-      geometry: control2
-    })
-    testSource.addFeature(control1Feature)
-    testSource.addFeature(control2Feature)
+    // const control1 = new Point(bezierCurve[1])
+    // const control2 = new Point(bezierCurve[2])
+    // const control1Feature = new Feature({
+    //   geometry: control1
+    // })
+    // const control2Feature = new Feature({
+    //   geometry: control2
+    // })
+    // testSource.addFeature(control1Feature)
+    // testSource.addFeature(control2Feature)
 
     if (i === bezierCurves.length - 1) {
       // add last point of last bezier curve
@@ -1277,7 +1283,6 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
     console.log(i + 'startFmsNode.heading: ', toDegrees(startFmsNode.referenceHeading), ' startWeight', startWeight, 'startWeightHeading', toDegrees(startWeightHeading))
     console.log(i + ' endWeight', endWeight, 'endWeightHeading', toDegrees(endWeightHeading))
 
-
     const fmsLaneSection = {
       id: uuidv4(),
       startFmsNodeId: startFmsNode.id,
@@ -1291,12 +1296,12 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
       bezierSteps
     }
     fmsLaneSections.push(fmsLaneSection)
+    startFmsNode.nextSectionsId.push(fmsLaneSection.id)
+    endFmsNode.prevSectionsId.push(fmsLaneSection.id)
   }
   console.log('tempFmsNodes', tempFmsNodes.length, 'bezierCurves', bezierCurves.length)
 
-
-    //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
-
+  //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
   recreateFmsMap()
 })
 
@@ -1346,7 +1351,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
   const startFmsNodeConnectorHeading = evt.feature.get('fmsNodeConnectorHeading')
   startFmsNode.nextSectionsId.push(fmsLaneSectionId)
 
-  const v = {
+  const fmsLaneSection = {
     id: fmsLaneSectionId,
     startFmsNodeId: startFmsNode.id,
     startFmsNodeConnectorHeading,
@@ -1422,6 +1427,7 @@ typeSelect.onchange = function () {
     case 'move-nodes':
       modifyFmsLaneType = 'fmsNode'
       map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
       map.addInteraction(select)
       // map.addInteraction(addNodesSnap)
@@ -1448,8 +1454,6 @@ typeSelect.onchange = function () {
 };
 
 map.on('wheel', (evt) => {
-  console.log('wheel', evt.originalEvent)
-
   const delta = evt.originalEvent.deltaY
 
   if(controlType === 'modify-nodes') {
