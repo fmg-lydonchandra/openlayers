@@ -862,6 +862,11 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
     const pt3direction2 = p5.Vector.rotate(pt3direction, fmsLaneSection.endWeightHeading)
     const pt3endWeight = p5.Vector.mult(pt3direction2, fmsLaneSection.endWeight)
     bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
+    console.log(
+      'endFmsNode.referenceHeading ' + toDegrees(endFmsNode.referenceHeading) +
+      ' fmsLaneSection.endWeightHeading ' + toDegrees(fmsLaneSection.endWeightHeading) +
+      ' fmsLaneSection.endWeight ' + fmsLaneSection.endWeight
+    )
   }
 
   const bezierPt4 = endFmsNode.referencePoint
@@ -1250,23 +1255,44 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
   fmsNodes.push(...tempFmsNodes)
 
   for (let i = 0; i < tempFmsNodes.length-1; i++) {
-    // const bezierCurve = bezierCurves[i];
-    const fmsNode = tempFmsNodes[i];
+    const startFmsNode = tempFmsNodes[i];
+    const endFmsNode = tempFmsNodes[i+1];
+
+    const bezierCurve = bezierCurves[i];
+    const start1 = new p5.Vector(bezierCurve[0][0], bezierCurve[0][1])
+    const control1 = new p5.Vector(bezierCurve[1][0], bezierCurve[1][1])
+    const startFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+
+    const startWeightVector = p5.Vector.sub(control1, start1)
+    const startWeight = startWeightVector.mag()
+    const startWeightHeading = startFmsNodeHeadingVector.angleBetween(startWeightVector)
+
+    const control2 = new p5.Vector(bezierCurve[2][0], bezierCurve[2][1])
+    const end1 = new p5.Vector(bezierCurve[3][0], bezierCurve[3][1])
+    const endFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+    const endWeightVector = p5.Vector.sub(end1, control2)
+    const endWeight = endWeightVector.mag()
+    const endWeightHeading = endFmsNodeHeadingVector.angleBetween(endWeightVector)
+
+    console.log(i + 'startFmsNode.heading: ', toDegrees(startFmsNode.referenceHeading), ' startWeight', startWeight, 'startWeightHeading', toDegrees(startWeightHeading))
+    console.log(i + ' endWeight', endWeight, 'endWeightHeading', toDegrees(endWeightHeading))
+
+
     const fmsLaneSection = {
       id: uuidv4(),
-      startFmsNodeId: fmsNode.id,
+      startFmsNodeId: startFmsNode.id,
       startFmsNodeConnectorHeading: 'same',
-      endFmsNodeId: tempFmsNodes[i + 1].id,
+      endFmsNodeId: endFmsNode.id,
       endFmsNodeConnectorHeading: 'opposite',
-      startWeight: 10,
-      startWeightHeading: 0,  //todo: calculate heading
-      endWeight: 10,
-      endWeightHeading: 0, //todo: calculate heading
+      startWeight: startWeight,
+      startWeightHeading: startWeightHeading,  //todo: calculate heading
+      endWeight: endWeight,
+      endWeightHeading: endWeightHeading, //todo: calculate heading
       bezierSteps
     }
     fmsLaneSections.push(fmsLaneSection)
   }
-
+  console.log('tempFmsNodes', tempFmsNodes.length, 'bezierCurves', bezierCurves.length)
 
 
     //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
@@ -1387,6 +1413,7 @@ typeSelect.onchange = function () {
     case 'modify-nodes':
       modifyFmsLaneType = 'fmsNode'
       map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
       map.addInteraction(select)
       map.addInteraction(addNodesSnap)
