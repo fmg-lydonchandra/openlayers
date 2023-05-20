@@ -21,6 +21,7 @@ import Feature from '../src/ol/Feature.js';
 import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 import fitCurve from 'fit-curve';
+import {ScaleLine} from '../src/ol/control.js';
 
 //todo: freehand drawing, automagically convert to bezier
 //todo: copy and paste nodes
@@ -404,8 +405,16 @@ closer.onclick = function () {
   return false;
 };
 
+const scaleBarControl = new ScaleLine({
+  units: 'metric',
+  bar: true,
+  steps: 4,
+  text: true,
+  minWidth: 140,
+});
+
 const map = new Map({
-  controls: defaultControls(),
+  controls: defaultControls().extend([scaleBarControl]),
   layers: [
     bing,
     vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer,
@@ -1183,15 +1192,28 @@ addNodes.on('drawend', function(evt) {
   createFmsNodesConnectorFeatures(fmsNode)
 })
 
-const addNodesAndLanesDraw = new Draw({
+const useFreehand= false;
+let addNodesAndLanesDraw = new Draw({
   type: 'LineString',
   source: testSource,
+  freehand: useFreehand,
 })
+// onchange event for use-freehand checkbox
+const useFreehandCheckbox = document.getElementById('use-freehand');
+useFreehandCheckbox.onchange = function() {
+  map.removeInteraction(addNodesAndLanesDraw)
+  addNodesAndLanesDraw = new Draw({
+    type: 'LineString',
+    source: testSource,
+    freehand: useFreehandCheckbox.checked,
+  })
+  addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler)
+  map.addInteraction(addNodesAndLanesDraw)
+}
 addNodesAndLanesDraw.on('drawstart', (evt) => {
-
 })
 
-addNodesAndLanesDraw.on('drawend', (evt) => {
+const addNodesAndLanesDrawEndHandler = (evt) => {
   const coordinates = evt.feature.getGeometry().getCoordinates();
   const error = 10
   // bezierCurves is an array of 4 points
@@ -1207,7 +1229,7 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
     // // let direction = p5.Vector.sub(cur, prev)
     let startIdx = coordinates.findIndex(
       xy => isEqualWithTolerance(xy[0], startPointCoord[0]) &&
-            isEqualWithTolerance(xy[1], startPointCoord[1])
+        isEqualWithTolerance(xy[1], startPointCoord[1])
     )
     console.log('startIdx', startIdx)
     let nextDrawnCoord = new p5.Vector(coordinates[startIdx + 1][0], coordinates[startIdx + 1][1])
@@ -1303,7 +1325,9 @@ addNodesAndLanesDraw.on('drawend', (evt) => {
 
   //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
   recreateFmsMap()
-})
+}
+
+addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler )
 
 const getLaneSectionsStyle = function(feature) {
   const styles = [defaultStyle];

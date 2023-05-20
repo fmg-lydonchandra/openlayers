@@ -44,3 +44,12 @@
   content: "✖";
 }
 
+.ol-scale-text, .ol-scale-step-text {
+  font-size: 1.3rem;
+  color: unset;
+  text-shadow: unset;
+}
+
+.ol-scale-step-marker {
+  height: 1.3rem;
+}
