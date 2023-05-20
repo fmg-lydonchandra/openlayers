@@ -1192,7 +1192,7 @@ addNodes.on('drawend', function(evt) {
   createFmsNodesConnectorFeatures(fmsNode)
 })
 
-const useFreehand= false;
+const useFreehand= true;
 let addNodesAndLanesDraw = new Draw({
   type: 'LineString',
   source: testSource,
@@ -1222,23 +1222,25 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
   //1. create fmsNodes from bezierCurves, and create fmsNode features
   for (let i = 0; i < bezierCurves.length; i++) {
     const bezierCurve = bezierCurves[i];
-    const endPointCoord = bezierCurve[3]
-    const startPointCoord = bezierCurve[0]
-    // let prev = new p5.Vector(startPointCoord[0], startPointCoord[1]);
-    // let cur = new p5.Vector(endPointCoord[0], endPointCoord[1])
-    // // let direction = p5.Vector.sub(cur, prev)
-    let startIdx = coordinates.findIndex(
-      xy => isEqualWithTolerance(xy[0], startPointCoord[0]) &&
-        isEqualWithTolerance(xy[1], startPointCoord[1])
-    )
-    console.log('startIdx', startIdx)
-    let nextDrawnCoord = new p5.Vector(coordinates[startIdx + 1][0], coordinates[startIdx + 1][1])
-    let direction = p5.Vector.sub(nextDrawnCoord, startPointCoord)
+
+    const start = bezierCurve[0]
+    const control1 = bezierCurve[1]
+    const control2 = bezierCurve[2]
+    const end = bezierCurve[3]
+
+    const tempBezier = new Bezier(...start, ...control1, ...control2, ...end)
+    const luts = tempBezier.getLUT(bezierSteps);
+    let lut0 = new p5.Vector(luts[0].x, luts[0].y)
+    let lut1 = new p5.Vector(luts[1].x, luts[1].y)
+
+    let lutDirection = p5.Vector.sub(lut1, lut0)
+    let heading = xUnitVec.angleBetween(lutDirection)
+    console.log('heading', toDegrees(heading), 'lutDirection', lutDirection)
 
     const fmsNode = {
       id: uuidv4(),
       referencePoint: { x: bezierCurve[0][0], y: bezierCurve[0][1] },
-      referenceHeading: direction.heading(),
+      referenceHeading: heading,
       leftEdge: {
         distanceFromReferencePoint: halfLaneWidthMeter,
       },
@@ -1250,24 +1252,12 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     }
     tempFmsNodes.push(fmsNode)
 
-    // visualize control points
-    // const control1 = new Point(bezierCurve[1])
-    // const control2 = new Point(bezierCurve[2])
-    // const control1Feature = new Feature({
-    //   geometry: control1
-    // })
-    // const control2Feature = new Feature({
-    //   geometry: control2
-    // })
-    // testSource.addFeature(control1Feature)
-    // testSource.addFeature(control2Feature)
-
     if (i === bezierCurves.length - 1) {
       // add last point of last bezier curve
       const fmsNode = {
         id: uuidv4(),
         referencePoint: { x: bezierCurve[3][0], y: bezierCurve[3][1] },
-        referenceHeading: direction.heading(),
+        referenceHeading: heading,
         leftEdge: {
           distanceFromReferencePoint: halfLaneWidthMeter,
         },
