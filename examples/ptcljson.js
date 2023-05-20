@@ -462,6 +462,39 @@ const updateFmsNode = () => {
 }
 window.updateFmsNode = updateFmsNode.bind(this);
 
+const deleteFmsNode = () => {
+  const fmsNodeId = document.getElementById('fms-node-id').value;
+  const idx = fmsNodes.findIndex(fmsNode => fmsNode.id === fmsNodeId)
+  if (idx === -1) {
+    throw new Error('fms node not found')
+  }
+  fmsNodes.splice(idx, 1)
+
+  const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
+  addNodesSource.removeFeature(fmsNodeFeature)
+
+  const connectorHeadingSame = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'same')
+  nodeConnectorsSource.removeFeature(connectorHeadingSame)
+
+  const connectorHeadingOpposite = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'opposite')
+  nodeConnectorsSource.removeFeature(connectorHeadingOpposite)
+
+  for (let i = fmsLaneSections.length - 1; i >= 0 ; i--) {
+    const fmsLaneSection = fmsLaneSections[i];
+    if (fmsLaneSection.startFmsNodeId === fmsNodeId || fmsLaneSection.endFmsNodeId === fmsNodeId) {
+      const deletedFmsLaneSection = fmsLaneSections.splice(i, 1)
+      const centerLineToDelete = centerLineSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSection.id)
+      centerLineSource.removeFeature(centerLineToDelete)
+      const ribsToDelete = ribsSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSection.id)
+      ribsSource.removeFeature(ribsToDelete)
+      const boundaryToDelete = boundarySource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSection.id)
+      boundarySource.removeFeature(boundaryToDelete)
+    }
+  }
+  redrawAllFmsLaneSections()
+}
+window.deleteFmsNode = deleteFmsNode.bind(this);
+
 const setFmsLaneSectionWeights = () => {
   const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
   const startWeight = document.getElementById('fms-lane-section-start-weight').value;
@@ -562,6 +595,7 @@ map.on('contextmenu', (evt) => {
       </p>
       <p>Prev Sections: ${fmsNode.prevSectionsId.join(",")} </p>
       <button onclick="window.updateFmsNode()">Set</button>
+      <button onclick="window.deleteFmsNode()">Delete</button>
     </div>    `
 
     content.innerHTML = innerHTML;
@@ -586,7 +620,7 @@ map.on('contextmenu', (evt) => {
       <button onclick='window.updateFmsLaneSection()'>Set</button>
       <button onclick='window.deleteFmsLaneSection()'>Delete</button>
       <button onclick='window.makeBidirectional()'>Make Bidirectional</button>
-    </div>    `
+    </div>`
 
     content.innerHTML = innerHTML;
   }
@@ -1233,9 +1267,18 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     let lut0 = new p5.Vector(luts[0].x, luts[0].y)
     let lut1 = new p5.Vector(luts[1].x, luts[1].y)
 
-    let lutDirection = p5.Vector.sub(lut1, lut0)
-    let heading = xUnitVec.angleBetween(lutDirection)
-    console.log('heading', toDegrees(heading), 'lutDirection', lutDirection)
+    let lut1Direction = p5.Vector.sub(lut1, lut0)
+    let heading = xUnitVec.angleBetween(lut1Direction)
+
+    const lutLast = new p5.Vector(
+      luts[luts.length - 1].x,
+      luts[luts.length - 1].y)
+    const lutSecondLast = new p5.Vector(
+      luts[luts.length - 2].x,
+      luts[luts.length - 2].y)
+
+    let lutLastDirection = p5.Vector.sub(lutLast, lutSecondLast)
+    let headingLast = xUnitVec.angleBetween(lutLastDirection)
 
     const fmsNode = {
       id: uuidv4(),
@@ -1257,7 +1300,7 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
       const fmsNode = {
         id: uuidv4(),
         referencePoint: { x: bezierCurve[3][0], y: bezierCurve[3][1] },
-        referenceHeading: heading,
+        referenceHeading: headingLast,
         leftEdge: {
           distanceFromReferencePoint: halfLaneWidthMeter,
         },
@@ -1315,6 +1358,11 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
 
   //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
   recreateFmsMap()
+  console.log(evt)
+  setTimeout(() => {
+    testSource.removeFeature(evt.feature)
+  }, 0)
+  // testLayer.changed()
 }
 
 addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler )
@@ -1449,6 +1497,7 @@ typeSelect.onchange = function () {
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
       map.removeInteraction(modifyFmsNodes)
+      map.removeInteraction(addNodesAndLanesDraw)
 
       map.addInteraction(addLaneSectionsDraw)
       // map.addInteraction(addNodesSnap)
