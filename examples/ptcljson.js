@@ -23,6 +23,7 @@ import {kinks, polygon} from '@turf/turf';
 import fitCurve from 'fit-curve';
 import {ScaleLine} from '../src/ol/control.js';
 import smooth from 'chaikin-smooth';
+import {GeoJSON} from '../src/ol/format.js';
 
 // https://github.com/mattdesl/vec2-copy/blob/master/index.js
 function vec2Copy(out, a) {
@@ -64,8 +65,7 @@ function makeSmooth(path, numIterations) {
   return path;
 }
 
-
-//todo: freehand drawing, automagically convert to bezier
+//todo: snap and trace ptcl.json centerline
 //todo: copy and paste nodes
 //todo: predefined shape, like extension loop
 //todo: serialize out into proper file for ingestion into FMS
@@ -187,6 +187,20 @@ proj4.defs(
   "+proj=utm +zone=50 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
 );
 register(proj4);
+
+const surveySource = new VectorSource({});
+const surveyLayer = new VectorLayer({
+  source: surveySource,
+  style: [new Style({
+    stroke: new Stroke({
+      color: 'yellow',
+      width: 2
+    })
+  })]
+})
+const surveySnap = new Snap({
+  source: surveySource,
+})
 
 function calculateCenter(geometry) {
   let center, coordinates, minRadius;
@@ -469,7 +483,7 @@ const scaleBarControl = new ScaleLine({
 const map = new Map({
   controls: defaultControls().extend([scaleBarControl]),
   layers: [
-    bing,
+    bing, surveyLayer,
     vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer,
     ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer,
     testLayer, testLayer2
@@ -500,6 +514,18 @@ map.on('loadend', function () {
   firstLoad = true;
 
   recreateFmsMap()
+
+  fetch('flinders_survey.json')
+    .then(res => res.json())
+    .then(json => {
+      const format = new GeoJSON()
+      debugger
+      const features = format.readFeatures(json, {
+        featureProjection: 'EPSG:3857',
+        dataProjection: 'EPSG:4326'
+      })
+      surveySource.addFeatures(features)
+    })
 });
 
 const updateFmsNode = () => {
@@ -1291,6 +1317,8 @@ let addNodesAndLanesDraw = new Draw({
   type: 'LineString',
   source: testSource,
   freehand: useFreehand,
+  trace: true,
+  traceSource: surveySource
 })
 // onchange event for use-freehand checkbox
 const useFreehandCheckbox = document.getElementById('use-freehand');
@@ -1568,7 +1596,8 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 map.addInteraction(addNodesAndLanesDraw);
 map.addInteraction(nodeConnectorsSnap)
 map.addInteraction(snap);
-map.addInteraction(ptclSnap)
+map.addInteraction(ptclSnap);
+map.addInteraction(surveySnap)
 
 /**
  * Currently user has to manually select whether to draw or modify/delete
