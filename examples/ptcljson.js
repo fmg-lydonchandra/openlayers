@@ -22,6 +22,48 @@ import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 import fitCurve from 'fit-curve';
 import {ScaleLine} from '../src/ol/control.js';
+import smooth from 'chaikin-smooth';
+
+// https://github.com/mattdesl/vec2-copy/blob/master/index.js
+function vec2Copy(out, a) {
+  out[0] = a[0]
+  out[1] = a[1]
+  return out
+}
+
+// https://github.com/Jam3/chaikin-smooth/blob/master/index.js
+function chaikinSmooth (input, output) {
+  if (!Array.isArray(output))
+    output = []
+
+  if (input.length>0)
+    output.push(vec2Copy([0, 0], input[0]))
+  for (let i=0; i<input.length-1; i++) {
+    const p0 = input[i];
+    const p1 = input[i + 1];
+    const p0x = p0[0],
+      p0y = p0[1],
+      p1x = p1[0],
+      p1y = p1[1];
+
+    const Q = [0.75 * p0x + 0.25 * p1x, 0.75 * p0y + 0.25 * p1y];
+    const R = [0.25 * p0x + 0.75 * p1x, 0.25 * p0y + 0.75 * p1y];
+    output.push(Q)
+    output.push(R)
+  }
+  if (input.length > 1)
+    output.push(vec2Copy([0, 0], input[ input.length-1 ]))
+  return output
+}
+function makeSmooth(path, numIterations) {
+  numIterations = Math.min(Math.max(numIterations, 1), 10);
+  while (numIterations > 0) {
+    path = chaikinSmooth(path);
+    numIterations--;
+  }
+  return path;
+}
+
 
 //todo: freehand drawing, automagically convert to bezier
 //todo: copy and paste nodes
@@ -37,6 +79,9 @@ let controlType = 'add-nodes'
 let modifyDelete = false
 const xUnitVec = new p5.Vector(1, 0)
 
+let params = (new URL(document.location)).searchParams;
+let debugParam = params.get("debug");
+let showDebugAid = debugParam === 'true';
 let bezierSteps = 4;
 /**
  * Our data store, source of truth, draw, modify, delete update this
@@ -238,7 +283,16 @@ const testSource = new VectorSource();
 const testLayer = new VectorLayer({
   source: testSource,
 })
-
+const testSource2 = new VectorSource();
+const testLayer2 = new VectorLayer({
+  source: testSource2,
+  style: new Style({
+    stroke: new Stroke({
+      color: 'red',
+      width: 2,
+    })
+  })
+})
 const centerLineSource = new VectorSource();
 const centerLineLayer = new VectorLayer({
   source: centerLineSource,
@@ -419,7 +473,7 @@ const map = new Map({
     bing,
     vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer,
     ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer,
-    testLayer
+    testLayer, testLayer2
   ],
   overlays: [overlay],
   target: 'map',
@@ -614,7 +668,9 @@ map.on('contextmenu', (evt) => {
     <div>
       <p>Lane: <input type='text' id='fms-lane-section-id' value='${fmsLaneSection.id}' disabled></p>
       <p>Start Weight: <input id='fms-lane-section-start-weight' type='text' size='5' value='${fmsLaneSection.startWeight}'></p>
+      <p>Start Weight Heading: <input id='fms-lane-section-start-weight-heading' type='text' size='5' value='${toDegrees(fmsLaneSection.startWeightHeading)}'></p>
       <p>End Weight: <input id='fms-lane-section-end-weight' type='text' size='5' value='${fmsLaneSection.endWeight}'></p>
+      <p>End Weight Heading: <input id='fms-lane-section-end-weight-heading' type='text' size='5' value='${toDegrees(fmsLaneSection.endWeightHeading)}'></p>
       <p>Bezier Steps: <input id='fms-lane-section-bezier-steps' type='text' size='5' value='${fmsLaneSection.bezierSteps}'></p>
 
       <button onclick='window.updateFmsLaneSection()'>Set</button>
@@ -1248,7 +1304,24 @@ addNodesAndLanesDraw.on('drawstart', (evt) => {
 })
 
 const addNodesAndLanesDrawEndHandler = (evt) => {
-  const coordinates = evt.feature.getGeometry().getCoordinates();
+  const geometry = evt.feature.getGeometry();
+  let coordinates = evt.feature.getGeometry().getCoordinates();
+
+  const numIterations = 2;
+  const smoothenedCoordinates = makeSmooth(coordinates, numIterations);
+  console.log(smoothenedCoordinates, coordinates)
+  const smoothenedLineString = new LineString(smoothenedCoordinates);
+  const smoothenedFeature = new Feature({
+    geometry: smoothenedLineString
+  })
+  testSource2.addFeature(smoothenedFeature)
+  testSource.addFeature(new Feature({
+    geometry: new LineString(JSON.parse(JSON.stringify(coordinates)))
+  }))
+  // geometry.setCoordinates(smoothenedCoordinates);
+  // evt.feature.setGeometry(smoothenedLineString)
+
+  coordinates = smoothenedCoordinates
   const error = 10
   // bezierCurves is an array of 4 points
   const bezierCurves = fitCurve(coordinates, error)
@@ -1335,9 +1408,6 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     const endWeight = endWeightVector.mag()
     const endWeightHeading = endFmsNodeHeadingVector.angleBetween(endWeightVector)
 
-    console.log(i + 'startFmsNode.heading: ', toDegrees(startFmsNode.referenceHeading), ' startWeight', startWeight, 'startWeightHeading', toDegrees(startWeightHeading))
-    console.log(i + ' endWeight', endWeight, 'endWeightHeading', toDegrees(endWeightHeading))
-
     const fmsLaneSection = {
       id: uuidv4(),
       startFmsNodeId: startFmsNode.id,
@@ -1354,15 +1424,15 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     startFmsNode.nextSectionsId.push(fmsLaneSection.id)
     endFmsNode.prevSectionsId.push(fmsLaneSection.id)
   }
-  console.log('tempFmsNodes', tempFmsNodes.length, 'bezierCurves', bezierCurves.length)
 
   //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
   recreateFmsMap()
-  console.log(evt)
-  setTimeout(() => {
-    testSource.removeFeature(evt.feature)
-  }, 0)
-  // testLayer.changed()
+
+  if (!showDebugAid) {
+    setTimeout(() => {
+      //testSource.removeFeature(evt.feature)
+    }, 0)
+  }
 }
 
 addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler )
@@ -1437,16 +1507,6 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
 });
 
-let drawAndSnapInteractions = [
-  addNodes,
-  addLaneSectionsDraw,
-  // modifyNodes,
-  modifyFmsNodes,
-  addNodesSnap,
-  snap, ptclSnap, centerLineSnap,
-  select,
-]
-
 map.addInteraction(addNodesAndLanesDraw);
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
@@ -1457,9 +1517,6 @@ map.addInteraction(ptclSnap)
  */
 const typeSelect = document.getElementById('type');
 typeSelect.onchange = function () {
-  // drawAndSnapInteractions.forEach(interaction => {
-  //   map.removeInteraction(interaction)
-  // })
   controlType = typeSelect.value
   switch (controlType) {
     case 'add-nodes':
@@ -1716,12 +1773,3 @@ const exportEmbomapJson = () => {
     fmsLaneSections: fmsSectionBoundariesTransformed
   }
 }
-
-
-const points = [[0, 0], [10, 10], [10, 0], [20, 0]];
-const error = 50; // The smaller the number - the much closer spline should be
-
-var bezierCurves = fitCurve(points, error);
-console.log(bezierCurves)
-// bezierCurves[0] === [[0, 0], [20.27317402, 20.27317402], [-1.24665147, 0], [20, 0]]
-// where each element is [x, y] and elements are [first-point, control-point-1, control-point-2, second-point]

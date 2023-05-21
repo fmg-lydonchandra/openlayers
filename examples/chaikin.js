@@ -40,6 +40,7 @@ const numIterations = document.getElementById('iterations');
 const draw = new Draw({
   source: vectorSource,
   type: 'LineString',
+  freehand: true,
 });
 map.addInteraction(draw);
 draw.on('drawend', function (event) {
