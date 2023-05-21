@@ -80,8 +80,7 @@ let modifyDelete = false
 const xUnitVec = new p5.Vector(1, 0)
 
 let params = (new URL(document.location)).searchParams;
-let debugParam = params.get("debug");
-let showDebugAid = debugParam === 'true';
+let debug = params.get("debug") === 'true';
 let bezierSteps = 4;
 /**
  * Our data store, source of truth, draw, modify, delete update this
@@ -552,12 +551,17 @@ window.deleteFmsNode = deleteFmsNode.bind(this);
 const setFmsLaneSectionWeights = () => {
   const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
   const startWeight = document.getElementById('fms-lane-section-start-weight').value;
+  const startWeightHeading = document.getElementById('fms-lane-section-start-weight-heading').value;
   const endWeight = document.getElementById('fms-lane-section-end-weight').value;
+  const endWeightHeading = document.getElementById('fms-lane-section-end-weight-heading').value;
   const bezierSteps = document.getElementById('fms-lane-section-bezier-steps').value;
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId);
   fmsLaneSection.startWeight = parseFloat(startWeight);
+  fmsLaneSection.startWeightHeading = toRadians(parseFloat(startWeightHeading));
   fmsLaneSection.endWeight = parseFloat(endWeight);
+  fmsLaneSection.endWeightHeading = toRadians(parseFloat(endWeightHeading));
   fmsLaneSection.bezierSteps = parseInt(bezierSteps);
+
   redrawFmsLaneSections(fmsLaneSectionId)
 }
 window.updateFmsLaneSection = setFmsLaneSectionWeights.bind(this);
@@ -1304,22 +1308,18 @@ addNodesAndLanesDraw.on('drawstart', (evt) => {
 })
 
 const addNodesAndLanesDrawEndHandler = (evt) => {
-  const geometry = evt.feature.getGeometry();
   let coordinates = evt.feature.getGeometry().getCoordinates();
 
-  const numIterations = 2;
+  const numIterations = 1;
   const smoothenedCoordinates = makeSmooth(coordinates, numIterations);
-  console.log(smoothenedCoordinates, coordinates)
-  const smoothenedLineString = new LineString(smoothenedCoordinates);
-  const smoothenedFeature = new Feature({
-    geometry: smoothenedLineString
-  })
-  testSource2.addFeature(smoothenedFeature)
-  testSource.addFeature(new Feature({
-    geometry: new LineString(JSON.parse(JSON.stringify(coordinates)))
-  }))
-  // geometry.setCoordinates(smoothenedCoordinates);
-  // evt.feature.setGeometry(smoothenedLineString)
+
+  if (debug) {
+    const smoothenedLineString = new LineString(smoothenedCoordinates);
+    const smoothenedFeature = new Feature({
+      geometry: smoothenedLineString
+    })
+    testSource2.addFeature(smoothenedFeature)
+  }
 
   coordinates = smoothenedCoordinates
   const error = 10
@@ -1415,9 +1415,9 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
       endFmsNodeId: endFmsNode.id,
       endFmsNodeConnectorHeading: 'opposite',
       startWeight: startWeight,
-      startWeightHeading: startWeightHeading,  //todo: calculate heading
+      startWeightHeading: startWeightHeading,
       endWeight: endWeight,
-      endWeightHeading: endWeightHeading, //todo: calculate heading
+      endWeightHeading: endWeightHeading,
       bezierSteps
     }
     fmsLaneSections.push(fmsLaneSection)
@@ -1428,9 +1428,9 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
   //2. create fmsLaneSections from bezierCurves, and create fmsLaneSection features
   recreateFmsMap()
 
-  if (!showDebugAid) {
+  if (!debug) {
     setTimeout(() => {
-      //testSource.removeFeature(evt.feature)
+      testSource.removeFeature(evt.feature)
     }, 0)
   }
 }
