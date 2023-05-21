@@ -965,11 +965,11 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
     const pt3direction2 = p5.Vector.rotate(pt3direction, fmsLaneSection.endWeightHeading)
     const pt3endWeight = p5.Vector.mult(pt3direction2, fmsLaneSection.endWeight)
     bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
-    console.log(
-      'endFmsNode.referenceHeading ' + toDegrees(endFmsNode.referenceHeading) +
-      ' fmsLaneSection.endWeightHeading ' + toDegrees(fmsLaneSection.endWeightHeading) +
-      ' fmsLaneSection.endWeight ' + fmsLaneSection.endWeight
-    )
+    // console.log(
+    //   'endFmsNode.referenceHeading ' + toDegrees(endFmsNode.referenceHeading) +
+    //   ' fmsLaneSection.endWeightHeading ' + toDegrees(fmsLaneSection.endWeightHeading) +
+    //   ' fmsLaneSection.endWeight ' + fmsLaneSection.endWeight
+    // )
   }
 
   const bezierPt4 = endFmsNode.referencePoint
@@ -1305,9 +1305,41 @@ useFreehandCheckbox.onchange = function() {
   map.addInteraction(addNodesAndLanesDraw)
 }
 addNodesAndLanesDraw.on('drawstart', (evt) => {
+  const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'connector');
+  if (snappedFmsNodeFeatures.length === 0) {
+    console.debug('no fmsNode found at drawstart')
+    return;
+  }
+  console.log(snappedFmsNodeFeatures)
+  const fmsNodeId = snappedFmsNodeFeatures[0].get('fmsNodeId')
+  const fmsNodeConnectorHeading = snappedFmsNodeFeatures[0].get('fmsNodeConnectorHeading')
+
+  evt.feature.set('startFmsNodeId', fmsNodeId)
+  evt.feature.set('fmsNodeConnectorHeading', fmsNodeConnectorHeading)
 })
 
 const addNodesAndLanesDrawEndHandler = (evt) => {
+  // only connection to existing fmsNode at start and end of drawn lanes are supported
+  // (eg. no connection to existing fmsNode for nodes in middle of drawn lanes)
+  const startFmsNodeId = evt.feature.get('startFmsNodeId')
+  const startFmsNodeConnectorHeading = evt.feature.get('fmsNodeConnectorHeading')
+
+  let endFmsNodeId;
+  let endFmsNodeConnectorHeading;
+
+  // using pointerPixelCoord: workaround for addNodesAndLanesDrawEndHandler evt.pixel not updated on drawend event and freehand is true
+  const endFmsNodeFeatures = map.getFeaturesAtPixel(pointerPixelCoord).filter(feat => feat.get('fmsLaneType') === 'connector');
+
+  if (endFmsNodeFeatures.length === 0) {
+    console.debug('no fmsNode found at drawend, will create new fmsNode')
+  }
+  else {
+    endFmsNodeId = endFmsNodeFeatures[0].get('fmsNodeId')
+    endFmsNodeConnectorHeading = endFmsNodeFeatures[0].get('fmsNodeConnectorHeading')
+    const tempEndFmsNode = fmsNodes.find(fmsNode => fmsNode.id === endFmsNodeId)
+    console.debug('fmsNode found at drawend, will connect to existing fmsNode', endFmsNodeId, endFmsNodeConnectorHeading, tempEndFmsNode)
+  }
+
   let coordinates = evt.feature.getGeometry().getCoordinates();
 
   const numIterations = 1;
@@ -1353,41 +1385,57 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     let lutLastDirection = p5.Vector.sub(lutLast, lutSecondLast)
     let headingLast = xUnitVec.angleBetween(lutLastDirection)
 
-    const fmsNode = {
-      id: uuidv4(),
-      referencePoint: { x: bezierCurve[0][0], y: bezierCurve[0][1] },
-      referenceHeading: heading,
-      leftEdge: {
-        distanceFromReferencePoint: halfLaneWidthMeter,
-      },
-      rightEdge: {
-        distanceFromReferencePoint: halfLaneWidthMeter,
-      },
-      nextSectionsId : [],
-      prevSectionsId: []
-    }
-    tempFmsNodes.push(fmsNode)
-
-    if (i === bezierCurves.length - 1) {
-      // add last point of last bezier curve
+    if (i === 0 && startFmsNodeId != null) {
+      const fmsNode = fmsNodes.find(node => node.id === startFmsNodeId)
+      tempFmsNodes.push(fmsNode)
+    } else {
       const fmsNode = {
         id: uuidv4(),
-        referencePoint: { x: bezierCurve[3][0], y: bezierCurve[3][1] },
-        referenceHeading: headingLast,
+        referencePoint: {x: bezierCurve[0][0], y: bezierCurve[0][1]},
+        referenceHeading: heading,
         leftEdge: {
           distanceFromReferencePoint: halfLaneWidthMeter,
         },
         rightEdge: {
           distanceFromReferencePoint: halfLaneWidthMeter,
         },
-        nextSectionsId : [],
+        nextSectionsId: [],
         prevSectionsId: []
       }
+
       tempFmsNodes.push(fmsNode)
     }
-  }
-  fmsNodes.push(...tempFmsNodes)
 
+    if (i === bezierCurves.length - 1) {
+      if (endFmsNodeId != null) {
+        const fmsNode = fmsNodes.find(node => node.id === endFmsNodeId)
+        tempFmsNodes.push(fmsNode)
+      } else {
+        // add last point of last bezier curve
+        const fmsNode = {
+          id: uuidv4(),
+          referencePoint: {x: bezierCurve[3][0], y: bezierCurve[3][1]},
+          referenceHeading: headingLast,
+          leftEdge: {
+            distanceFromReferencePoint: halfLaneWidthMeter,
+          },
+          rightEdge: {
+            distanceFromReferencePoint: halfLaneWidthMeter,
+          },
+          nextSectionsId: [],
+          prevSectionsId: []
+        }
+        tempFmsNodes.push(fmsNode)
+      }
+    }
+  }
+  tempFmsNodes.forEach(fmsNode => {
+    if (fmsNodes.findIndex(node => node.id === fmsNode.id) === -1) {
+      fmsNodes.push(fmsNode)
+    }
+  })
+  // fmsNodes.push(...tempFmsNodes)
+  //
   for (let i = 0; i < tempFmsNodes.length-1; i++) {
     const startFmsNode = tempFmsNodes[i];
     const endFmsNode = tempFmsNodes[i+1];
@@ -1395,7 +1443,11 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     const bezierCurve = bezierCurves[i];
     const start1 = new p5.Vector(bezierCurve[0][0], bezierCurve[0][1])
     const control1 = new p5.Vector(bezierCurve[1][0], bezierCurve[1][1])
-    const startFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+    let startFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading)
+    if (i === 0 && startFmsNodeConnectorHeading === 'opposite') {
+      console.log('startFmsNodeConnectorHeading', startFmsNodeConnectorHeading, toDegrees(startFmsNode.referenceHeading))
+      startFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, startFmsNode.referenceHeading + Math.PI)
+    }
 
     const startWeightVector = p5.Vector.sub(control1, start1)
     const startWeight = startWeightVector.mag()
@@ -1403,7 +1455,13 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
 
     const control2 = new p5.Vector(bezierCurve[2][0], bezierCurve[2][1])
     const end1 = new p5.Vector(bezierCurve[3][0], bezierCurve[3][1])
-    const endFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+
+    let endFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading)
+    if (i === tempFmsNodes.length - 2 && endFmsNodeConnectorHeading === 'same') {
+      console.log('endFmsNodeConnectorHeading', endFmsNodeConnectorHeading, toDegrees(endFmsNode.referenceHeading))
+      endFmsNodeHeadingVector = p5.Vector.rotate(xUnitVec, endFmsNode.referenceHeading + Math.PI)
+    }
+
     const endWeightVector = p5.Vector.sub(end1, control2)
     const endWeight = endWeightVector.mag()
     const endWeightHeading = endFmsNodeHeadingVector.angleBetween(endWeightVector)
@@ -1411,9 +1469,9 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
     const fmsLaneSection = {
       id: uuidv4(),
       startFmsNodeId: startFmsNode.id,
-      startFmsNodeConnectorHeading: 'same',
+      startFmsNodeConnectorHeading: startFmsNodeConnectorHeading ? startFmsNodeConnectorHeading : 'same',
       endFmsNodeId: endFmsNode.id,
-      endFmsNodeConnectorHeading: 'opposite',
+      endFmsNodeConnectorHeading: endFmsNodeConnectorHeading ? endFmsNodeConnectorHeading : 'opposite',
       startWeight: startWeight,
       startWeightHeading: startWeightHeading,
       endWeight: endWeight,
@@ -1435,7 +1493,7 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
   }
 }
 
-addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler )
+addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler)
 
 const getLaneSectionsStyle = function(feature) {
   const styles = [defaultStyle];
@@ -1508,6 +1566,7 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 });
 
 map.addInteraction(addNodesAndLanesDraw);
+map.addInteraction(nodeConnectorsSnap)
 map.addInteraction(snap);
 map.addInteraction(ptclSnap)
 
@@ -1532,7 +1591,8 @@ typeSelect.onchange = function () {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodes)
       map.addInteraction(addNodesAndLanesDraw)
-      map.addInteraction(addNodesSnap)
+      map.addInteraction(nodeConnectorsSnap)
+      modifyDelete = false
       break
     case 'modify-nodes':
       modifyFmsLaneType = 'fmsNode'
@@ -1573,6 +1633,11 @@ typeSelect.onchange = function () {
   }
 };
 
+// workaround for addNodesAndLanesDrawEndHandler evt.pixel not updated on drawend event and freehand is true
+let pointerPixelCoord = null
+map.on('pointermove', (evt) => {
+  pointerPixelCoord = evt.pixel
+})
 map.on('wheel', (evt) => {
   const delta = evt.originalEvent.deltaY
 
