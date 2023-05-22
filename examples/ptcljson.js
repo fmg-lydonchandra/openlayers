@@ -65,6 +65,9 @@ function makeSmooth(path, numIterations) {
   return path;
 }
 
+//todo: snap centerLine, adjust width automagically ?
+//todo: last snapped feature, map.getFeaturesAtPixel is not easy to use, it has to be exact pixel
+//todo: merge node
 //todo: snap and trace ptcl.json centerline
 //todo: copy and paste nodes
 //todo: predefined shape, like extension loop
@@ -97,12 +100,6 @@ let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('f
   fmsLaneSections: [],
 };
 const FmsProjection = 'EPSG:28350'
-
-// fmsMap.units = {
-//   length: 'meters',
-//   angle: 'radians',
-//   projection: 'EPSG:3857',
-// }
 
 let fmsNodes = fmsMap.fmsNodes;
 let fmsLaneSections = fmsMap.fmsLaneSections;
@@ -519,7 +516,6 @@ map.on('loadend', function () {
     .then(res => res.json())
     .then(json => {
       const format = new GeoJSON()
-      debugger
       const features = format.readFeatures(json, {
         featureProjection: 'EPSG:3857',
         dataProjection: 'EPSG:4326'
@@ -1312,7 +1308,7 @@ addNodes.on('drawend', function(evt) {
   createFmsNodesConnectorFeatures(fmsNode)
 })
 
-const useFreehand= true;
+let useFreehand = true;
 let addNodesAndLanesDraw = new Draw({
   type: 'LineString',
   source: testSource,
@@ -1323,11 +1319,14 @@ let addNodesAndLanesDraw = new Draw({
 // onchange event for use-freehand checkbox
 const useFreehandCheckbox = document.getElementById('use-freehand');
 useFreehandCheckbox.onchange = function() {
+  useFreehand = this.checked;
   map.removeInteraction(addNodesAndLanesDraw)
   addNodesAndLanesDraw = new Draw({
     type: 'LineString',
     source: testSource,
-    freehand: useFreehandCheckbox.checked,
+    freehand: useFreehand,
+    trace: true,
+    traceSource: surveySource,
   })
   addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler)
   map.addInteraction(addNodesAndLanesDraw)
@@ -1597,7 +1596,8 @@ map.addInteraction(addNodesAndLanesDraw);
 map.addInteraction(nodeConnectorsSnap)
 map.addInteraction(snap);
 map.addInteraction(ptclSnap);
-map.addInteraction(surveySnap)
+// map.addInteraction(surveySnap)
+map.addInteraction(centerLineSnap)
 
 /**
  * Currently user has to manually select whether to draw or modify/delete
