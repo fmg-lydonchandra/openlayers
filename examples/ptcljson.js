@@ -1321,6 +1321,11 @@ const useFreehandCheckbox = document.getElementById('use-freehand');
 useFreehandCheckbox.onchange = function() {
   useFreehand = this.checked;
   map.removeInteraction(addNodesAndLanesDraw)
+  map.removeInteraction(nodeConnectorsSnap)
+  map.removeInteraction(snap);
+  map.removeInteraction(ptclSnap);
+  map.removeInteraction(centerLineSnap)
+  map.removeInteraction(addNodesSnap)
   addNodesAndLanesDraw = new Draw({
     type: 'LineString',
     source: testSource,
@@ -1330,6 +1335,12 @@ useFreehandCheckbox.onchange = function() {
   })
   addNodesAndLanesDraw.on('drawend', addNodesAndLanesDrawEndHandler)
   map.addInteraction(addNodesAndLanesDraw)
+  map.addInteraction(nodeConnectorsSnap)
+  map.addInteraction(snap);
+  map.addInteraction(ptclSnap);
+  map.addInteraction(centerLineSnap)
+  map.addInteraction(addNodesSnap)
+
 }
 addNodesAndLanesDraw.on('drawstart', (evt) => {
   const snappedFmsNodeFeatures = map.getFeaturesAtPixel(evt.target.downPx_).filter(feat => feat.get('fmsLaneType') === 'connector');
