@@ -557,7 +557,7 @@ const deleteFmsNode = () => {
   for (let i = fmsLaneSections.length - 1; i >= 0 ; i--) {
     const fmsLaneSection = fmsLaneSections[i];
     if (fmsLaneSection.startFmsNodeId === fmsNodeId || fmsLaneSection.endFmsNodeId === fmsNodeId) {
-      const deletedFmsLaneSection = fmsLaneSections.splice(i, 1)
+      fmsLaneSections.splice(i, 1)
       const centerLineToDelete = centerLineSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSection.id)
       centerLineSource.removeFeature(centerLineToDelete)
       const ribsToDelete = ribsSource.getFeatures().find(feat => feat.get('fmsLaneSectionId') === fmsLaneSection.id)
@@ -617,21 +617,27 @@ const deleteFmsLaneSection = () => {
 }
 window.deleteFmsLaneSection = deleteFmsLaneSection.bind(this);
 
-const makeBidirectional = () => {
-  const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
+const makeBidirectionalInternal = (fmsLaneSectionId) => {
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
   const reversedFmsLaneSection = {
     id: uuidv4(),
     startFmsNodeId: fmsLaneSection.endFmsNodeId,
     startFmsNodeConnectorHeading: fmsLaneSection.endFmsNodeConnectorHeading,
     startWeight: fmsLaneSection.endWeight,
+    startWeightHeading: fmsLaneSection.endWeightHeading,
 
     endFmsNodeId: fmsLaneSection.startFmsNodeId,
     endFmsNodeConnectorHeading: fmsLaneSection.startFmsNodeConnectorHeading,
     endWeight: fmsLaneSection.startWeight,
+    endWeightHeading: fmsLaneSection.startWeightHeading,
     bezierSteps: fmsLaneSection.bezierSteps,
   }
   fmsLaneSections.push(reversedFmsLaneSection)
+  const startFmsNode = fmsNodes.find(fmsNode => fmsNode.id === reversedFmsLaneSection.startFmsNodeId)
+  startFmsNode.nextSectionsId.push(reversedFmsLaneSection.id)
+  const endFmsNode = fmsNodes.find(fmsNode => fmsNode.id === reversedFmsLaneSection.endFmsNodeId)
+  endFmsNode.prevSectionsId.push(reversedFmsLaneSection.id)
+
   const centerLineFeature = new Feature({
     fmsLaneSectionId: reversedFmsLaneSection.id,
   })
@@ -646,8 +652,13 @@ const makeBidirectional = () => {
     fmsLaneSectionId: reversedFmsLaneSection.id,
   })
   boundarySource.addFeature(boundaryFeature)
+  redrawFmsLaneSections(reversedFmsLaneSection.id)
 }
-window.makeBidirectional = makeBidirectional.bind(this);
+window.makeBidirectionalInternal = makeBidirectionalInternal.bind(this);
+window.makeBidirectional = () => {
+  const fmsLaneSectionId = document.getElementById('fms-lane-section-id').value;
+  makeBidirectionalInternal(fmsLaneSectionId);
+}
 
 map.on('contextmenu', (evt) => {
   console.log('contextmenu', evt)
@@ -719,6 +730,9 @@ let ptclSnap = new Snap({
 let centerLineSnap = new Snap({
   source: centerLineSource,
 });
+centerLineSnap.on('snap', (e) => {
+  // console.log('centerLineSnap', e)
+})
 let addNodesSnap = new Snap({
   source: addNodesSource,
 });
@@ -987,11 +1001,6 @@ const createBezierCenterLineGeom = (fmsLaneSection) => {
     const pt3direction2 = p5.Vector.rotate(pt3direction, fmsLaneSection.endWeightHeading)
     const pt3endWeight = p5.Vector.mult(pt3direction2, fmsLaneSection.endWeight)
     bezierPt3 = p5.Vector.sub(pt3, pt3endWeight)
-    // console.log(
-    //   'endFmsNode.referenceHeading ' + toDegrees(endFmsNode.referenceHeading) +
-    //   ' fmsLaneSection.endWeightHeading ' + toDegrees(fmsLaneSection.endWeightHeading) +
-    //   ' fmsLaneSection.endWeight ' + fmsLaneSection.endWeight
-    // )
   }
 
   const bezierPt4 = endFmsNode.referencePoint
@@ -1128,7 +1137,7 @@ const calculateRibsAndBoundaryGeom = (fmsLaneSection, centerLineCoords) => {
   return { ribsGeom, boundaryGeom, sectionBoundaries }
 }
 
-const redrawFmsLaneSections = (fmsLaneSectionId, bezierSteps) => {
+const redrawFmsLaneSections = (fmsLaneSectionId) => {
   const fmsLaneSection = fmsLaneSections.find(fmsLaneSection => fmsLaneSection.id === fmsLaneSectionId)
 
   const centerLine = createBezierCenterLineGeom(fmsLaneSection)
