@@ -24,6 +24,7 @@ import fitCurve from 'fit-curve';
 import {ScaleLine} from '../src/ol/control.js';
 import smooth from 'chaikin-smooth';
 import {GeoJSON} from '../src/ol/format.js';
+import LayerSwitcher from 'ol-ext/control/LayerSwitcher.js';
 
 // https://github.com/mattdesl/vec2-copy/blob/master/index.js
 function vec2Copy(out, a) {
@@ -65,6 +66,7 @@ function makeSmooth(path, numIterations) {
   return path;
 }
 
+//todo: select existing centerLine feature from PTCL json, click to convert to nodes+lanes format
 //todo: snap centerLine, adjust width automagically ?
 //todo: last snapped feature, map.getFeaturesAtPixel is not easy to use, it has to be exact pixel
 //todo: merge node
@@ -187,6 +189,7 @@ register(proj4);
 
 const surveySource = new VectorSource({});
 const surveyLayer = new VectorLayer({
+  name: 'Flinders Survey Layer',
   source: surveySource,
   style: [new Style({
     stroke: new Stroke({
@@ -195,6 +198,7 @@ const surveyLayer = new VectorLayer({
     })
   })]
 })
+surveyLayer.setVisible(false)
 const surveySnap = new Snap({
   source: surveySource,
 })
@@ -291,10 +295,12 @@ const getRibsRotationStyle = function (feature) {
 
 const testSource = new VectorSource();
 const testLayer = new VectorLayer({
+  name: 'Test Layer',
   source: testSource,
 })
 const testSource2 = new VectorSource();
 const testLayer2 = new VectorLayer({
+  name: 'Test Layer 2',
   source: testSource2,
   style: new Style({
     stroke: new Stroke({
@@ -305,15 +311,18 @@ const testLayer2 = new VectorLayer({
 })
 const centerLineSource = new VectorSource();
 const centerLineLayer = new VectorLayer({
+  name: 'Center Line Layer',
   source: centerLineSource,
   style: getDirectionArrowStyle
 });
 const ribsSource = new VectorSource();
 const ribsLayer = new VectorLayer({
+  name: 'Ribs Layer',
   source: ribsSource,
 });
 const boundarySource = new VectorSource();
 const boundaryLayer = new VectorLayer({
+  name: 'Boundary Layer',
   source: boundarySource,
   style: (feature, a, b) => {
     const poly = feature.getGeometry().getCoordinates();
@@ -340,23 +349,27 @@ const boundaryLayer = new VectorLayer({
 //todo: is this used?
 const drawSource = new VectorSource();
 const newVector = new VectorLayer({
+  name: 'Draw Layer',
   source: drawSource,
   style: getRibsRotationStyle
 });
 
 const addNodesSource = new VectorSource();
 const addNodesLayer = new VectorLayer({
+  name: 'Add Nodes Layer',
   source: addNodesSource,
   // style: getRibsRotationStyle
 });
 
 const nodeConnectorsSource = new VectorSource();
 const nodeConnectorsLayer = new VectorLayer({
+  name: 'Node Connectors Layer',
   source: nodeConnectorsSource,
 });
 
 const addLaneSectionSource = new VectorSource();
 const addLaneSectionLayer = new VectorLayer({
+  name: 'Add Lane Section Layer',
   source: addLaneSectionSource,
   style: new Style({
     stroke: new Stroke({
@@ -427,12 +440,14 @@ const ptclSource = new VectorSource({
 // });
 
 const vectorPtcl = new VectorLayer({
+  name: 'PTCL Layer',
   source: ptclSource,
   style: defaultStyle,
 });
 vectorPtcl.setVisible(true)
 
 const bing = new TileLayer({
+  name: 'Bing Maps',
   visible: true,
   preload: Infinity,
   source: new BingMaps({
@@ -491,6 +506,15 @@ const map = new Map({
     center: [0, 0],
     zoom: 2,
   }),
+});
+
+var ctrl = new LayerSwitcher({
+  // collapsed: false,
+  // mouseover: true
+});
+map.addControl(ctrl);
+ctrl.on('toggle', function(e) {
+  console.log('Collapse layerswitcher', e.collapsed);
 });
 
 let firstLoad = false;
@@ -1634,13 +1658,20 @@ typeSelect.onchange = function () {
       map.addInteraction(addNodes)
       map.addInteraction(snap);
       map.addInteraction(ptclSnap)
+      map.addInteraction(centerLineSnap)
+
       modifyDelete = false
       break;
     case 'add-nodes-and-lanes':
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodes)
+      map.removeInteraction(centerLineSnap)
+
+
       map.addInteraction(addNodesAndLanesDraw)
       map.addInteraction(nodeConnectorsSnap)
+      map.addInteraction(centerLineSnap)
+
       modifyDelete = false
       break
     case 'modify-nodes':
@@ -1648,8 +1679,10 @@ typeSelect.onchange = function () {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
+
       map.addInteraction(select)
       map.addInteraction(addNodesSnap)
+
       modifyDelete = false
       break;
     case 'move-nodes':
@@ -1657,7 +1690,10 @@ typeSelect.onchange = function () {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
+      map.removeInteraction(centerLineSnap)
       map.addInteraction(select)
+      map.addInteraction(centerLineSnap)
+
       // map.addInteraction(addNodesSnap)
       break
     case 'add-lane-sections':

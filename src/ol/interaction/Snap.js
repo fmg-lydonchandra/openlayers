@@ -22,6 +22,7 @@ import {
 } from '../proj.js';
 import {getUid} from '../util.js';
 import {listen, unlistenByKey} from '../events.js';
+import {SnapEvent} from '../events/SnapEvent.js';
 
 /**
  * @typedef {Object} Result
@@ -47,7 +48,7 @@ import {listen, unlistenByKey} from '../events.js';
 
 /**
  * @param  {import("../source/Vector.js").VectorSourceEvent|import("../Collection.js").CollectionEvent<import("../Feature.js").default>} evt Event.
- * @return {import("../Feature.js").default} Feature.
+ * @return {import("../Feature.js").default|null} Feature.
  */
 function getFeatureFromEvent(evt) {
   if (
@@ -55,7 +56,8 @@ function getFeatureFromEvent(evt) {
   ) {
     return /** @type {import("../source/Vector.js").VectorSourceEvent} */ (evt)
       .feature;
-  } else if (
+  }
+  if (
     /** @type {import("../Collection.js").CollectionEvent<import("../Feature.js").default>} */ (
       evt
     ).element
@@ -64,6 +66,7 @@ function getFeatureFromEvent(evt) {
       evt
     ).element;
   }
+  return null;
 }
 
 const tempSegment = [];
@@ -111,6 +114,12 @@ class Snap extends PointerInteraction {
     }
 
     super(pointerOptions);
+
+    this.on;
+
+    this.once;
+
+    this.un;
 
     /**
      * @type {import("../source/Vector.js").default|null}
@@ -195,6 +204,10 @@ class Snap extends PointerInteraction {
       'GeometryCollection': this.segmentGeometryCollectionGeometry_.bind(this),
       'Circle': this.segmentCircleGeometry_.bind(this),
     };
+
+    // As you suggested in Stack Overflow you can use forEachFeatureAtPixel.
+    // That could be done in a condition function for any interaction, as well as drawstart and drawend, and done using only documented API methods as in https://codesandbox.io/s/draw-and-modify-features-forked-enrgqv?file=/main.js
+    // If the Snap interaction was constructed with features: snapFeatures instead of source: snapSource just replace snapSource.getFeatures().includes with snapFeatures.getArray().includes.
   }
 
   /**
@@ -268,6 +281,13 @@ class Snap extends PointerInteraction {
       evt.coordinate = result.vertex.slice(0, 2);
       evt.pixel = result.vertexPixel;
       evt.feature = result.feature;
+      this.dispatchEvent(
+        new SnapEvent({
+          vertex: result.vertex,
+          vertexPixel: result.vertexPixel,
+          feature: result.feature,
+        })
+      );
     }
     return super.handleEvent(evt);
   }
@@ -278,7 +298,9 @@ class Snap extends PointerInteraction {
    */
   handleFeatureAdd_(evt) {
     const feature = getFeatureFromEvent(evt);
+    if (feature) {
     this.addFeature(feature);
+    }
   }
 
   /**
@@ -287,7 +309,9 @@ class Snap extends PointerInteraction {
    */
   handleFeatureRemove_(evt) {
     const feature = getFeatureFromEvent(evt);
+    if (feature) {
     this.removeFeature(feature);
+    }
   }
 
   /**

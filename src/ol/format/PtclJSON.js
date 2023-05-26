@@ -93,14 +93,8 @@ class PtclJSON extends JSONFeature {
           this.layers_.ribs.getSource().addFeature(ribFeature);
         }
 
-        //todo: this causes severe performance issues when loading flinders ptcl json
-
-        // const ribLineString = new LineString(ribCoords)
-        // const ribFeature = new Feature(ribLineString);
-        // ribFeature.set('fmsLaneType', 'ribs')
-        // ribFeature.set('fmsPathSectionId', pathSection.id)
-        // ribFeature.set('fmsRibsId', j)
-        // this.layers_.ribs.getSource().addFeature(ribFeature);
+        //todo: ribs as multiLineString
+        //todo: add nodes (at start and end)
       }
 
       const boundaryGeom = PtclJSON.getBoundaryGeom(ribsCoords)
@@ -115,8 +109,6 @@ class PtclJSON extends JSONFeature {
       centerLineFeature.set('fmsPathSectionId', pathSection.id)
       this.layers_.centerLine.getSource().addFeature(centerLineFeature)
 
-      // let firstLastPointsGeom = new MultiPoint(firstLastPoints);
-      // geometries[PtclJSON.FirstLastPointsIx] = firstLastPointsGeom.transform('EPSG:28350', 'EPSG:3857');
     }
     return features;
   }
