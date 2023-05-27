@@ -22,7 +22,6 @@ import {Collection, Overlay} from '../src/ol/index.js';
 import {kinks, polygon} from '@turf/turf';
 import fitCurve from 'fit-curve';
 import {ScaleLine} from '../src/ol/control.js';
-import smooth from 'chaikin-smooth';
 import {GeoJSON} from '../src/ol/format.js';
 import LayerSwitcher from 'ol-ext/control/LayerSwitcher.js';
 
@@ -1636,21 +1635,15 @@ addLaneSectionsDraw.on('drawend', (evt) => {
 
 });
 
-map.addInteraction(addNodesAndLanesDraw);
-map.addInteraction(nodeConnectorsSnap)
-map.addInteraction(snap);
-map.addInteraction(ptclSnap);
-// map.addInteraction(surveySnap)
-map.addInteraction(centerLineSnap)
 
-/**
- * Currently user has to manually select whether to draw or modify/delete
- * @type {HTMLElement}
- */
-const typeSelect = document.getElementById('type');
-typeSelect.onchange = function () {
-  controlType = typeSelect.value
+const changeControlType = (newControlType) => {
+  controlType = newControlType
   switch (controlType) {
+    case 'select-ptcl-lane-sections':
+      modifyFmsLaneType = 'ptclLaneSection'
+      map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addNodesAndLanesDraw)
+      break;
     case 'add-nodes':
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
@@ -1676,6 +1669,7 @@ typeSelect.onchange = function () {
       break
     case 'modify-nodes':
       modifyFmsLaneType = 'fmsNode'
+      map.removeInteraction(select)
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
@@ -1691,10 +1685,11 @@ typeSelect.onchange = function () {
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
       map.removeInteraction(centerLineSnap)
+
       map.addInteraction(select)
       map.addInteraction(centerLineSnap)
+      modifyDelete = false
 
-      // map.addInteraction(addNodesSnap)
       break
     case 'add-lane-sections':
       map.removeInteraction(addNodes)
@@ -1702,7 +1697,6 @@ typeSelect.onchange = function () {
       map.removeInteraction(addNodesAndLanesDraw)
 
       map.addInteraction(addLaneSectionsDraw)
-      // map.addInteraction(addNodesSnap)
       map.addInteraction(nodeConnectorsSnap)
 
       modifyDelete = false
@@ -1716,7 +1710,20 @@ typeSelect.onchange = function () {
       modifyDelete = false
       break;
   }
-};
+}
+
+/**
+ * Currently user has to manually select whether to draw or modify/delete
+ * @type {HTMLElement}
+ */
+const typeSelect = document.getElementById('type');
+console.log('typeSelect', typeSelect)
+changeControlType(typeSelect.value)
+
+typeSelect.onchange = () => {
+  changeControlType(typeSelect.value)
+}
+
 
 // workaround for addNodesAndLanesDrawEndHandler evt.pixel not updated on drawend event and freehand is true
 let pointerPixelCoord = null
