@@ -7,6 +7,8 @@ import {GeometryCollection, LineString, MultiLineString, MultiPoint} from '../ge
 import Mgrs from '../../../public/mgrs.js';
 import Polygon from '../geom/Polygon.js';
 import Point from '../geom/Point.js';
+import { Vector } from 'p5';
+import {v4 as uuidv4} from 'uuid';
 
 class PtclJSON extends JSONFeature {
   constructor(options) {
@@ -15,7 +17,10 @@ class PtclJSON extends JSONFeature {
     this.layerName_ = options.layerName;
     this.layers_ = options.layers ? options.layers : null;
     this.dataProjection = getProjection(
-      options.dataProjection ? options.dataProjection : 'EPSG:4326'
+      options.dataProjection ? options.dataProjection : 'EPSG:28350'
+    );
+    this.featureProjection = getProjection(
+      options.featureProjection ? options.featureProjection : 'EPSG:3857'
     );
     this.mgrsSquare = options.mgrsSquare;
     if (!this.mgrsSquare) {
@@ -29,6 +34,7 @@ class PtclJSON extends JSONFeature {
         pathSections: []
       }
     }
+    this.fmsNodes = [];
   }
 
   static BoundaryIx = 0;
@@ -42,6 +48,10 @@ class PtclJSON extends JSONFeature {
 
   getFmsPathSections() {
     return this.ptclJsonMapProjRad.AreaMapDePtr.pathSections;
+  }
+
+  getFmsNodes() {
+    return this.fmsNodes;
   }
 
   readFeaturesFromObject(object, options) {
@@ -74,7 +84,8 @@ class PtclJSON extends JSONFeature {
         ];
         const mgrsInst = new Mgrs();
         const centerPoint = mgrsInst.mgrs_to_utm(centerPointMgrs, this.mgrsSquare);
-        const centerPointMapProj = new Point(centerPoint).transform('EPSG:28350', 'EPSG:3857').getCoordinates()
+
+        const centerPointMapProj = new Point(centerPoint).transform(this.dataProjection, this.featureProjection).getCoordinates()
         pathSecElem.referencePoint.x = centerPointMapProj[0];
         pathSecElem.referencePoint.y = centerPointMapProj[1];
         pathSecElem.leftEdge.distanceFromReferencePoint = pathSecElem.leftEdge.distanceFromReferencePoint / 1000;
@@ -84,15 +95,45 @@ class PtclJSON extends JSONFeature {
         const ribCoords = PtclJSON.calcRibsCoordsInMapProjection(pathSecElem)
         ribsCoords.push(ribCoords)
         centerLineCoords.push(centerPointMapProj);
-        if(j === 0 || j === pathSection.numElements - 1) {
-          const ribLineString = new LineString(ribCoords)
-          const ribFeature = new Feature(ribLineString);
-          ribFeature.set('fmsLaneType', 'ribs')
-          ribFeature.set('fmsPathSectionId', pathSection.id)
-          ribFeature.set('fmsRibsId', j)
-          this.layers_.ribs.getSource().addFeature(ribFeature);
-        }
+        // if(j === 0 || j === pathSection.numElements - 1) {
+        //   const ribLineString = new LineString(ribCoords)
+        //   const ribFeature = new Feature(ribLineString);
+        //   ribFeature.set('fmsLaneType', 'ribs')
+        //   ribFeature.set('fmsPathSectionId', pathSection.id)
+        //   ribFeature.set('fmsRibsId', j)
+        //   this.layers_.ribs.getSource().addFeature(ribFeature);
+        // }
 
+        if (j === 0 || j === pathSection.numElements - 1) {
+          const fmsNode = {
+            id: uuidv4(),
+            referencePoint: {
+              x: centerPointMapProj[0],
+              y: centerPointMapProj[1],
+            },
+            referenceHeading: pathSecElem.referenceHeading,
+            leftEdge: {
+              distanceFromReferencePoint: pathSecElem.leftEdge.distanceFromReferencePoint,
+            },
+            rightEdge: {
+              distanceFromReferencePoint: pathSecElem.rightEdge.distanceFromReferencePoint,
+            },
+            nextSectionsId: [],
+            prevSectionsId: [],
+          }
+          this.fmsNodes.push(fmsNode);
+
+          // const geometry = this.createNodesGeomCol(centerPointMapProj, {
+          //   referenceHeading: fmsNode.referenceHeading,
+          //   laneWidth: fmsNode.leftEdge.distanceFromReferencePoint
+          // })
+
+          // const fmsNodeFeature = new Feature(geometry);
+          // fmsNodeFeature.set('fmsLaneType', 'fmsNodePtcl')
+          // fmsNodeFeature.set('fmsLaneSectionIdPtcl', pathSection.id)
+          // //todo: add fmsNodesConnector features
+          // this.layers_.fmsNodes.getSource().addFeature(fmsNodeFeature);
+        }
         //todo: ribs as multiLineString
         //todo: add nodes (at start and end)
       }
@@ -111,6 +152,55 @@ class PtclJSON extends JSONFeature {
 
     }
     return features;
+  }
+
+  createNodesGeomCol (coordinates, options) {
+    const CenterPointIx = 0;
+    const LeftRightPointIx = 1;
+    const RibIx = 2;
+
+    const geometry = new GeometryCollection([
+      new Point(coordinates), //center
+      new MultiPoint([]),   //left-right
+      new LineString([]) //rib
+    ]);
+
+    const geometries = geometry.getGeometries();
+
+    const curCoord = coordinates
+
+    let cur = new Vector(curCoord[0], curCoord[1])
+    let directionNorm = new Vector(1, 0)
+    directionNorm = Vector.rotate(directionNorm, options.referenceHeading)
+
+    let directionLaneWidth = Vector.mult(directionNorm, options.laneWidth)
+
+    let prevCoordLaneWidthVec = Vector.add(cur, directionLaneWidth);
+    let leftRib = new LineString(
+      [
+        curCoord,
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+      ]);
+    leftRib.rotate(Math.PI / 2.0, curCoord);
+    let rightRib = new LineString(
+      [
+        curCoord,
+        [prevCoordLaneWidthVec.x, prevCoordLaneWidthVec.y],
+      ])
+    rightRib.rotate(-Math.PI / 2.0, curCoord);
+
+    let ribLineString = new LineString(
+      [
+        leftRib.getCoordinates()[1],
+        curCoord,
+        rightRib.getCoordinates()[1]
+      ]
+    )
+    geometries[RibIx].setCoordinates(ribLineString.getCoordinates());
+    //need to do 'setGeometries', simple assignment won't work
+    geometry.setGeometries(geometries);
+
+    return geometry;
   }
 
   /**

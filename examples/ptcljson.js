@@ -85,12 +85,8 @@ const xUnitVec = new p5.Vector(1, 0)
 
 let params = (new URL(document.location)).searchParams;
 let debug = params.get("debug") === 'true';
+let copyFmsNodesFromPtclJson = params.get("copyFmsNodesFromPtclJson") === 'true';
 let bezierSteps = 4;
-/**
- * Our data store, source of truth, draw, modify, delete update this
- * @type {{}}
- */
-let fmsPtclJsonPathSections;
 let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('fmsMap')) : {
   units: {
     length: 'meters',
@@ -353,10 +349,10 @@ const newVector = new VectorLayer({
   style: getRibsRotationStyle
 });
 
-const addNodesSource = new VectorSource();
-const addNodesLayer = new VectorLayer({
-  name: 'Add Nodes Layer',
-  source: addNodesSource,
+const fmsNodesSource = new VectorSource();
+const fmsNodesLayer = new VectorLayer({
+  name: 'FMS Nodes Layer',
+  source: fmsNodesSource,
   // style: getRibsRotationStyle
 });
 
@@ -367,8 +363,9 @@ const nodeConnectorsLayer = new VectorLayer({
 });
 
 const addLaneSectionSource = new VectorSource();
+// use when drawing initial linestring between nodes
 const addLaneSectionLayer = new VectorLayer({
-  name: 'Add Lane Section Layer',
+  name: 'Add Lane Section Temp Layer',
   source: addLaneSectionSource,
   style: new Style({
     stroke: new Stroke({
@@ -402,6 +399,7 @@ const ptclSource = new VectorSource({
   url: 'flinders.ptcl.json',
   format: new PtclJSON({
     dataProjection: FmsProjection,
+    featureProjection: 'EPSG:3857',
     style: defaultStyle,
     mgrsSquare: {
       utm_zone: 50,
@@ -413,6 +411,7 @@ const ptclSource = new VectorSource({
       boundary: boundaryLayer,
       centerLine: centerLineLayer,
       ribs: ribsLayer,
+      fmsNodes: fmsNodesLayer
     }
   }),
   overlaps: false,
@@ -447,7 +446,7 @@ vectorPtcl.setVisible(true)
 
 const bing = new TileLayer({
   name: 'Bing Maps',
-  visible: true,
+  visible: false,
   preload: Infinity,
   source: new BingMaps({
     key: 'AlEoTLTlzFB6Uf4Sy-ugXcRO21skQO7K8eObA5_L-8d20rjqZJLs2nkO1RMjGSPN',
@@ -495,7 +494,7 @@ const map = new Map({
   controls: defaultControls().extend([scaleBarControl]),
   layers: [
     bing, surveyLayer,
-    vectorPtcl, newVector, addNodesLayer, addLaneSectionLayer,
+    vectorPtcl, newVector, fmsNodesLayer, addLaneSectionLayer,
     ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer,
     testLayer, testLayer2
   ],
@@ -526,7 +525,12 @@ map.on('loadend', function () {
   if (!feature) {
     return;
   }
-  fmsPtclJsonPathSections = ptclSource.getFormat().getFmsPathSections()
+
+  if (copyFmsNodesFromPtclJson) {
+    // fmsPtclJsonPathSections = ptclSource.getFormat().getFmsPathSections()
+    const fmsNodesPtclJson = ptclSource.getFormat().getFmsNodes()
+    fmsNodes.push(...fmsNodesPtclJson)
+  }
 
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
@@ -568,8 +572,8 @@ const deleteFmsNode = () => {
   }
   fmsNodes.splice(idx, 1)
 
-  const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
-  addNodesSource.removeFeature(fmsNodeFeature)
+  const fmsNodeFeature = fmsNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
+  fmsNodesSource.removeFeature(fmsNodeFeature)
 
   const connectorHeadingSame = nodeConnectorsSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId && feat.get('fmsNodeConnectorHeading') === 'same')
   nodeConnectorsSource.removeFeature(connectorHeadingSame)
@@ -757,7 +761,7 @@ centerLineSnap.on('snap', (e) => {
   // console.log('centerLineSnap', e)
 })
 let addNodesSnap = new Snap({
-  source: addNodesSource,
+  source: fmsNodesSource,
 });
 let nodeConnectorsSnap = new Snap({
   source: nodeConnectorsSource,
@@ -778,7 +782,7 @@ select.on('select', function (e) {
     }
   })
   selected.clear();
-
+  console.log(featuresToModify)
   map.removeInteraction(snap)
   map.removeInteraction(ptclSnap)
   map.removeInteraction(modifyFmsNodes)
@@ -902,7 +906,7 @@ const recreateFmsMap = () => {
       fmsLaneType: 'fmsNode',
       fmsNode: fmsNode
     })
-    addNodesSource.addFeature(fmsNodeFeature)
+    fmsNodesSource.addFeature(fmsNodeFeature)
 
     createFmsNodesConnectorFeatures(fmsNode)
   });
@@ -961,7 +965,7 @@ const createFmsLaneSectionsFeatures = (fmsLaneSection) => {
 
 const redrawFmsNodes = (fmsNodeId) => {
   const fmsNode = fmsNodes.find(fmsNode => fmsNode.id === fmsNodeId)
-  const fmsNodeFeature = addNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
+  const fmsNodeFeature = fmsNodesSource.getFeatures().find(feat => feat.get('fmsNodeId') === fmsNodeId)
   const fmsNodeGeomCol = getFmsNodesGeomCol(fmsNode)
   fmsNodeFeature.setGeometry(fmsNodeGeomCol)
 
@@ -1222,7 +1226,7 @@ const createNodesGeomCol = function(coordinates, options) {
   //need to do 'setGeometries', simple assignment won't work
   geometry.setGeometries(geometries);
 
-  return geometry
+  return geometry;
 }
 
 const getFmsNodesGeomCol = function(fmsNode) {
@@ -1325,7 +1329,7 @@ const getNodesStyle = function(feature) {
 
 const addNodes = new Draw({
   type: 'Point',
-  source: addNodesSource,
+  source: fmsNodesSource,
   geometryFunction: addNodesGeomFn,
   style: getNodesStyle
 })
@@ -1340,7 +1344,7 @@ addNodes.on('drawend', function(evt) {
   createFmsNodesConnectorFeatures(fmsNode)
 })
 
-let useFreehand = true;
+let useFreehand = false;
 let addNodesAndLanesDraw = new Draw({
   type: 'LineString',
   source: testSource,
@@ -1640,9 +1644,11 @@ const changeControlType = (newControlType) => {
   controlType = newControlType
   switch (controlType) {
     case 'select-ptcl-lane-sections':
-      modifyFmsLaneType = 'ptclLaneSection'
+      modifyFmsLaneType = 'centerLine'
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
+      map.addInteraction(select)
+
       break;
     case 'add-nodes':
       map.removeInteraction(addLaneSectionsDraw)

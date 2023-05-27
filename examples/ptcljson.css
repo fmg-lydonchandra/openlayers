@@ -1,5 +1,9 @@
 .map {
   background-color: #2a2a0a;
+  height: 1300px;
+}
+#map:focus {
+  outline: #4A74A8 solid 0.15em;
 }
 .ol-popup {
   position: absolute;
