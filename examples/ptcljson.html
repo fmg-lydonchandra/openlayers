@@ -18,13 +18,22 @@ resources:
     <label>Control type</label>
     <select id="type">
       <option value="add-nodes">Add Nodes</option>
-      <option value="add-nodes-and-lanes" selected>Add Nodes & Lanes</option>
+      <option value="add-nodes-and-lanes">Add Nodes & Lanes</option>
       <option value="modify-nodes">Modify Nodes</option>
       <option value="move-nodes">Move Nodes</option>
       <option value="add-lane-sections">Add Lane Sections</option>
       <option value="modify-lane-sections">Modify Lane Sections</option>
       <option value="select-ptcl-lane-sections">Select PTCL Lane Sections</option>
+      <option value="get-route" selected>Get Route</option>
     </select>
+  </div>
+  <div>
+    <label for="route-source">Route Source</label>
+    <input type="text" id="route-source" name="route-source" value="1">
+  </div>
+  <div>
+    <label for="route-destination">Route Destination</label>
+    <input type="text" id="route-destination" name="route-destination" value="2">
   </div>
 
   <div>

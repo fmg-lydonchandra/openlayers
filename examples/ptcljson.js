@@ -182,6 +182,178 @@ proj4.defs(
 );
 register(proj4);
 
+const routeSource = new VectorSource({});
+const routeLayer = new VectorLayer({
+  name: 'Route Layer',
+  source: routeSource,
+  style: [new Style({
+    stroke: new Stroke({
+      color: 'red',
+      width: 4
+    }),
+    image: new CircleStyle({
+      radius: 4,
+      fill: new Fill({
+        color: 'red',
+      })
+    })
+  })]
+})
+const addRoute = new Draw({
+  source: routeSource,
+  type: 'Point',
+})
+
+
+addRoute.on('drawend', function(evt) {
+  const allFeatures = routeSource.getFeatures()
+  for (let i = 0; i < allFeatures.length - 1; i++) {
+    const feat = allFeatures[i]
+    routeSource.removeFeature(feat);
+  }
+  if (allFeatures.length < 1) {
+    return;
+  }
+  const sourcePoint = new Point(routeSource.getFeatures()[0].getGeometry().getCoordinates()).transform('EPSG:3857', 'EPSG:4326');
+
+  const destPoint = new Point(evt.feature.getGeometry().getCoordinates()).transform('EPSG:3857', 'EPSG:4326');
+  setTimeout(() => {
+    const valhallaUrl = 'http://localhost:8002/route?json='
+    const payload = {
+      "locations": [
+        {
+          "options": {
+            "allowUTurn": true
+          },
+          "latLng": {
+            "lat": sourcePoint.getCoordinates()[1],
+            "lng": sourcePoint.getCoordinates()[0]
+          },
+          "_initHooksCalled": true,
+          "lat": sourcePoint.getCoordinates()[1],
+          "lon": sourcePoint.getCoordinates()[0]
+        },
+        {
+          "options": {
+            "allowUTurn": true
+          },
+          "latLng": {
+            "lat": destPoint.getCoordinates()[1],
+            "lng": destPoint.getCoordinates()[0]
+          },
+          "_initHooksCalled": true,
+          "lat": destPoint.getCoordinates()[1],
+          "lon": destPoint.getCoordinates()[0]
+        }
+      ],
+      "costing": "auto"
+    }
+
+    fetch(valhallaUrl + JSON.stringify(payload))
+      .then(res => res.json())
+      .then(json => {
+        console.log(json)
+        // https://github.com/tim-field/lrm-valhalla/blob/master/src/L.Routing.Valhalla.js#L100
+
+        const insts = [];
+        const coordinates = [];
+        let shapeIndex = 0;
+
+        const manueversInstruction = []
+
+        for(let i = 0; i < json.trip.legs.length; i++){
+          const coord = decodeValhallaShape(json.trip.legs[i].shape, 6);
+
+          for(let k = 0; k < coord.length; k++){
+            // convert to lon/lat (from lat/lon)
+            const lonlatCoord = [ coord[k][1], coord[k][0] ];
+            coordinates.push( lonlatCoord );
+          }
+          const lineString = new LineString(coordinates).transform('EPSG:4326', 'EPSG:3857');
+          const feature = new Feature({
+            geometry: lineString,
+          });
+          routeSource.addFeature(feature);
+          console.debug(coordinates, feature)
+
+          // console.debug(coordinates)
+
+          for(let j =0; j < json.trip.legs[i].maneuvers.length; j++) {
+            const res = json.trip.legs[i].maneuvers[j];
+            manueversInstruction.push(res.verbal_pre_transition_instruction);
+            manueversInstruction.push(res.verbal_post_transition_instruction);
+            res.distance = json.trip.legs[i].maneuvers[j]["length"];
+            res.index = shapeIndex + json.trip.legs[i].maneuvers[j]["begin_shape_index"];
+            insts.push(res);
+          }
+
+          shapeIndex += json.trip.legs[i].maneuvers[json.trip.legs[i].maneuvers.length-1]["begin_shape_index"];
+        }
+
+        overlay.setPosition(evt.feature.getGeometry().getCoordinates())
+        const innerHTML = `
+        <code>
+          <pre>${JSON.stringify(manueversInstruction, null, 2)}</pre>
+        </code>    `
+
+        content.innerHTML = innerHTML;
+
+      }).catch(err => {
+        console.error(err)
+      })
+
+  }, 0)
+})
+
+const decodeValhallaShape = function(str, precision) {
+  var index = 0,
+    lat = 0,
+    lng = 0,
+    coordinates = [],
+    shift = 0,
+    result = 0,
+    byte = null,
+    latitude_change,
+    longitude_change,
+    factor = Math.pow(10, precision || 6);
+
+  // Coordinates have variable length when encoded, so just keep
+  // track of whether we've hit the end of the string. In each
+  // loop iteration, a single coordinate is decoded.
+  while (index < str.length) {
+
+    // Reset shift, result, and byte
+    byte = null;
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = str.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+
+    shift = result = 0;
+
+    do {
+      byte = str.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+
+    lat += latitude_change;
+    lng += longitude_change;
+
+    coordinates.push([lat / factor, lng / factor]);
+  }
+
+  return coordinates;
+}
+
 const surveySource = new VectorSource({});
 const surveyLayer = new VectorLayer({
   name: 'Flinders Survey Layer',
@@ -496,7 +668,8 @@ const map = new Map({
     bing, surveyLayer,
     vectorPtcl, newVector, fmsNodesLayer, addLaneSectionLayer,
     ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer,
-    testLayer, testLayer2
+    testLayer, testLayer2,
+    routeLayer
   ],
   overlays: [overlay],
   target: 'map',
@@ -1715,6 +1888,14 @@ const changeControlType = (newControlType) => {
       map.addInteraction(centerLineSnap)
       modifyDelete = false
       break;
+    case 'get-route':
+      map.removeInteraction(addNodes)
+      map.removeInteraction(addNodesAndLanesDraw)
+      map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(select)
+
+      map.addInteraction(addRoute)
+      modifyDelete = false;
   }
 }
 
