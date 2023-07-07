@@ -237,33 +237,33 @@ class PtclJSON extends JSONFeature {
     return returnMultiLineString;
   }
 
-  static getBoundaryGeom(ribCoords) {
+  static getBoundaryGeom(ribsCoords) {
     // console.log('ribCoords', ribCoords)
     const boundaryCoords = [];
-    if(ribCoords < 2) {
+    if(ribsCoords < 2) {
       throw new Error('pathSectionElements < 2');
     }
-    const firstRib = ribCoords[0];
+    const firstRib = ribsCoords[0];
     boundaryCoords.push(firstRib[2]);
     boundaryCoords.push(firstRib[1]);
     boundaryCoords.push(firstRib[0]);
 
     // add left boundary
-    for (let i = 1; i < ribCoords.length - 1; i++)
+    for (let i = 1; i < ribsCoords.length - 1; i++)
     {
-      let rib = ribCoords[i];
+      let rib = ribsCoords[i];
       boundaryCoords.push(rib[0]);
     }
 
-    let lastRib = ribCoords[ribCoords.length-1];
+    let lastRib = ribsCoords[ribsCoords.length-1];
     boundaryCoords.push(lastRib[0]);
     boundaryCoords.push(lastRib[1]);
     boundaryCoords.push(lastRib[2]);
 
     // add right boundary
-    for (let i = ribCoords.length - 2; i >= 0; i--)
+    for (let i = ribsCoords.length - 2; i >= 0; i--)
     {
-      let rib = ribCoords[i];
+      let rib = ribsCoords[i];
       boundaryCoords.push(rib[2]);
     }
     return new Polygon([ boundaryCoords ]);

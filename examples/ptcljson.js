@@ -246,7 +246,10 @@ addRoute.on('drawend', function(evt) {
           "lon": destPoint.getCoordinates()[0]
         }
       ],
-      "costing": "auto"
+      "costing": "truck",
+      "costing_options2": {
+        "length": 500
+      }
     }
 
     fetch(valhallaUrl + JSON.stringify(payload))
@@ -1820,13 +1823,14 @@ const changeControlType = (newControlType) => {
       modifyFmsLaneType = 'centerLine'
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
+      map.removeInteraction(addRoute)
       map.addInteraction(select)
 
       break;
     case 'add-nodes':
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
-
+      map.removeInteraction(addRoute)
       map.addInteraction(addNodes)
       map.addInteraction(snap);
       map.addInteraction(ptclSnap)
@@ -1838,7 +1842,7 @@ const changeControlType = (newControlType) => {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodes)
       map.removeInteraction(centerLineSnap)
-
+      map.removeInteraction(addRoute)
 
       map.addInteraction(addNodesAndLanesDraw)
       map.addInteraction(nodeConnectorsSnap)
@@ -1852,6 +1856,7 @@ const changeControlType = (newControlType) => {
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
+      map.removeInteraction(addRoute)
 
       map.addInteraction(select)
       map.addInteraction(addNodesSnap)
@@ -1864,6 +1869,7 @@ const changeControlType = (newControlType) => {
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addNodes)
       map.removeInteraction(centerLineSnap)
+      map.removeInteraction(addRoute)
 
       map.addInteraction(select)
       map.addInteraction(centerLineSnap)
@@ -1874,6 +1880,7 @@ const changeControlType = (newControlType) => {
       map.removeInteraction(addNodes)
       map.removeInteraction(modifyFmsNodes)
       map.removeInteraction(addNodesAndLanesDraw)
+      map.removeInteraction(addRoute)
 
       map.addInteraction(addLaneSectionsDraw)
       map.addInteraction(nodeConnectorsSnap)
@@ -1885,6 +1892,8 @@ const changeControlType = (newControlType) => {
       map.removeInteraction(addNodes)
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addLaneSectionsDraw)
+      map.removeInteraction(addRoute)
+      
       map.addInteraction(centerLineSnap)
       modifyDelete = false
       break;
