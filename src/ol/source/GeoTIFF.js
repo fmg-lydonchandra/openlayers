@@ -382,7 +382,7 @@ class GeoTIFFSource extends DataTile {
     super({
       state: 'loading',
       tileGrid: null,
-      projection: null,
+      projection: options.projection != null ? options.projection : null,
       opaque: options.opaque,
       transition: options.transition,
       interpolate: options.interpolate !== false,

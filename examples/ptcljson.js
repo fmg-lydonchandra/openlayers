@@ -7,6 +7,8 @@ import View from '../src/ol/View.js';
 import proj4 from 'proj4';
 import {Circle as CircleStyle, Circle, Fill, RegularShape, Stroke, Style} from '../src/ol/style.js';
 import {Tile as TileLayer, Vector as VectorLayer} from '../src/ol/layer.js';
+import WebGLTileLayer from '../src/ol/layer/WebGLTile.js';
+
 import {register} from '../src/ol/proj/proj4.js';
 import {defaults as defaultControls} from '../src/ol/control/defaults.js';
 import BingMaps from '../src/ol/source/BingMaps.js';
@@ -24,6 +26,7 @@ import fitCurve from 'fit-curve';
 import {ScaleLine} from '../src/ol/control.js';
 import {GeoJSON} from '../src/ol/format.js';
 import LayerSwitcher from 'ol-ext/control/LayerSwitcher.js';
+import GeoTIFF from '../src/ol/source/GeoTIFF.js';
 
 // https://github.com/mattdesl/vec2-copy/blob/master/index.js
 function vec2Copy(out, a) {
@@ -87,16 +90,17 @@ let params = (new URL(document.location)).searchParams;
 let debug = params.get("debug") === 'true';
 let copyFmsNodesFromPtclJson = params.get("copyFmsNodesFromPtclJson") === 'true';
 let bezierSteps = 4;
+const FmsProjection = 'EPSG:28350'
+
 let fmsMap = localStorage.getItem('fmsMap') ? JSON.parse(localStorage.getItem('fmsMap')) : {
   units: {
     length: 'meters',
     angle: 'radians',
-    projection: 'EPSG:3857',
+    projection: FmsProjection,
   },
   fmsNodes: [],
   fmsLaneSections: [],
 };
-const FmsProjection = 'EPSG:28350'
 
 let fmsNodes = fmsMap.fmsNodes;
 let fmsLaneSections = fmsMap.fmsLaneSections;
@@ -180,7 +184,36 @@ proj4.defs(
   "EPSG:28350",
   "+proj=utm +zone=50 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
 );
+
+
+// MGRS:50KQA
+var MGRS50KQA = 'PROJCS["GDA94 / Custom",' +
+  'GEOGCS["GDA94",' +
+  '    DATUM["Geocentric_Datum_of_Australia_1994",' +
+  '        SPHEROID["GRS 1980",6378137,298.257222101],' +
+  '        TOWGS84[0,0,0,0,0,0,0]],' +
+  '    PRIMEM["Greenwich",0,' +
+  '        AUTHORITY["EPSG","8901"]],' +
+  '    UNIT["degree",0.0174532925199433,' +
+  '        AUTHORITY["EPSG","9122"]],' +
+  '    AUTHORITY["EPSG","4283"]],' +
+  'PROJECTION["Transverse_Mercator"],' +
+  'PARAMETER["latitude_of_origin",0],' +
+  'PARAMETER["central_meridian",117],' +
+  'PARAMETER["scale_factor",0.9996],' +
+  'PARAMETER["false_easting",-200000],' +
+  'PARAMETER["false_northing",2500000],' +
+  'UNIT["metre",1,' +
+  '    AUTHORITY["EPSG","9001"]],' +
+  'AXIS["Easting",EAST],' +
+  'AXIS["Northing",NORTH]]';
+proj4.defs(
+  "MGRS:50KQA",
+  MGRS50KQA
+);
 register(proj4);
+
+const geotiffLayer = new WebGLTileLayer();
 
 const routeSource = new VectorSource({});
 const routeLayer = new VectorLayer({
@@ -214,9 +247,9 @@ addRoute.on('drawend', function(evt) {
   if (allFeatures.length < 1) {
     return;
   }
-  const sourcePoint = new Point(routeSource.getFeatures()[0].getGeometry().getCoordinates()).transform('EPSG:3857', 'EPSG:4326');
+  const sourcePoint = new Point(routeSource.getFeatures()[0].getGeometry().getCoordinates()).transform(FmsProjection, 'EPSG:4326');
 
-  const destPoint = new Point(evt.feature.getGeometry().getCoordinates()).transform('EPSG:3857', 'EPSG:4326');
+  const destPoint = new Point(evt.feature.getGeometry().getCoordinates()).transform(FmsProjection, 'EPSG:4326');
   setTimeout(() => {
     const valhallaUrl = 'http://localhost:8002/route?json='
     const payload = {
@@ -272,7 +305,7 @@ addRoute.on('drawend', function(evt) {
             const lonlatCoord = [ coord[k][1], coord[k][0] ];
             coordinates.push( lonlatCoord );
           }
-          const lineString = new LineString(coordinates).transform('EPSG:4326', 'EPSG:3857');
+          const lineString = new LineString(coordinates).transform('EPSG:4326', FmsProjection);
           const feature = new Feature({
             geometry: lineString,
           });
@@ -574,7 +607,8 @@ const ptclSource = new VectorSource({
   url: 'flinders.ptcl.json',
   format: new PtclJSON({
     dataProjection: FmsProjection,
-    featureProjection: 'EPSG:3857',
+    // featureProjection: 'EPSG:3857',
+    featureProjection: FmsProjection,
     style: defaultStyle,
     mgrsSquare: {
       utm_zone: 50,
@@ -668,19 +702,23 @@ const scaleBarControl = new ScaleLine({
 const map = new Map({
   controls: defaultControls().extend([scaleBarControl]),
   layers: [
-    bing, surveyLayer,
+    /*bing,*/ geotiffLayer,
+    surveyLayer,
     vectorPtcl, newVector, fmsNodesLayer, addLaneSectionLayer,
     ribsLayer, centerLineLayer, boundaryLayer, nodeConnectorsLayer,
     testLayer, testLayer2,
-    routeLayer
+    routeLayer,
   ],
   overlays: [overlay],
   target: 'map',
   view: new View({
     center: [0, 0],
     zoom: 2,
+    projection: FmsProjection,
   }),
 });
+
+window.mapObject = map
 
 var ctrl = new LayerSwitcher({
   // collapsed: false,
@@ -710,21 +748,48 @@ map.on('loadend', function () {
 
   const mapView = map.getView()
   mapView.fit(feature.getGeometry().getExtent());
-  mapView.setZoom(mapView.getZoom() - 3)
+  // mapView.setZoom(mapView.getZoom() - 4)
   firstLoad = true;
 
   recreateFmsMap()
-
   fetch('flinders_survey.json')
     .then(res => res.json())
     .then(json => {
       const format = new GeoJSON()
       const features = format.readFeatures(json, {
-        featureProjection: 'EPSG:3857',
+        featureProjection: FmsProjection,
         dataProjection: 'EPSG:4326'
       })
       surveySource.addFeatures(features)
     })
+
+  setTimeout(() => {
+
+
+    fetch('flinders_radar_cog.tif')
+      .then((response) => response.blob())
+      .then((blob) => {
+        const source = new GeoTIFF({
+          sources: [
+            {
+              blob,
+            },
+          ],
+          projection: 'MGRS:50KQA'
+        });
+window.geotiffSource = source
+        geotiffLayer.setSource(source);
+        setTimeout(() => {
+          console.log(source.tileGrid.getExtent())
+
+          // mapView.fit(source.tileGrid.getExtent());
+        }, 1000);
+        // mapView.setZoom(mapView.getZoom() - 4)
+        console.log('source', source)
+      });
+  }, 1110)
+
+
 });
 
 const updateFmsNode = () => {
@@ -1067,6 +1132,7 @@ const createNodeConnectorGeom = (fmsNode) => {
 }
 
 const recreateFmsMap = () => {
+  console.log(fmsMap.units.projection, map.getView().getProjection().getCode())
   // create fmsNode feature
   fmsNodes.forEach(fmsNode => {
     if (fmsMap.units.projection !== map.getView().getProjection().getCode()) {
@@ -1591,7 +1657,6 @@ const addNodesAndLanesDrawEndHandler = (evt) => {
   }
 
   let coordinates = evt.feature.getGeometry().getCoordinates();
-
   const numIterations = 1;
   const smoothenedCoordinates = makeSmooth(coordinates, numIterations);
 
@@ -1893,7 +1958,7 @@ const changeControlType = (newControlType) => {
       map.removeInteraction(addNodesAndLanesDraw)
       map.removeInteraction(addLaneSectionsDraw)
       map.removeInteraction(addRoute)
-      
+
       map.addInteraction(centerLineSnap)
       modifyDelete = false
       break;
